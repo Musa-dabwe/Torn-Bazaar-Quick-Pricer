@@ -1,9 +1,10 @@
 // ==UserScript==
-// @name         Torn Bazaar Smart Pricer
+// @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      2.0
 // @description  Auto-fill bazaar items with market-based pricing
 // @author       Zedtrooper [3028329]
+// @license      MIT
 // @match        https://www.torn.com/bazaar.php*
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -11,7 +12,33 @@
 // @connect      api.torn.com
 // @require      https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js
 // @run-at       document-idle
+// @downloadURL https://update.greasyfork.org/scripts/558562/Torn%20Bazaar%20Quick%20Pricer.user.js
+// @updateURL https://update.greasyfork.org/scripts/558562/Torn%20Bazaar%20Quick%20Pricer.meta.js
 // ==/UserScript==
+
+/*
+MIT License
+
+Copyright (c) 2024 Zedtrooper [3028329]
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
 
 (function() {
     'use strict';
@@ -54,8 +81,7 @@
             <div style="background: #fff; padding: 30px; border-radius: 10px; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
                 <h2 style="margin-top: 0; color: #333;">Bazaar Quick Pricer Setup</h2>
                 <p style="color: #666; line-height: 1.6;">
-                    This script needs a <strong>Public API Key</strong> to fetch market
-                    prices.<br><br>
+                    This script needs a <strong>Public API Key</strong> to fetch market prices.<br><br>
                     To create one:<br>
                     1. Go to <a href="https://www.torn.com/preferences.php#tab=api" target="_blank" style="color: #2196F3;">Settings → API Key</a><br>
                     2. Create a new <strong>Public</strong> API key<br>
@@ -107,7 +133,7 @@
         overlay.innerHTML = `
             <div style="background: #fff; padding: 30px; border-radius: 10px; max-width: 500px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
                 <h2 style="margin-top: 0; color: #333;">Bazaar Quick Pricer Settings</h2>
-
+                
                 <div style="margin: 20px 0;">
                     <label style="display: block; margin-bottom: 5px; color: #666; font-weight: bold;">Discount Percentage:</label>
                     <input type="number" id="discountInput" value="${CONFIG.defaultDiscount}" min="0" max="50" step="0.5" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; box-sizing: border-box;">
@@ -170,69 +196,39 @@
         return null;
     }
 
-    // Get quantity from item element - FIXED VERSION
+    // Get quantity from item element
     function getQuantity(itemElement) {
-        // Look for the title-wrap which contains the item name and quantity
         const titleWrap = itemElement.querySelector('div.title-wrap');
         if (!titleWrap) {
-            console.log('[BazaarQuickPricer] Title wrap not found');
             return 1;
         }
-
-        // Get all text content
+        
         const fullText = titleWrap.innerText || titleWrap.textContent;
-        console.log('[BazaarQuickPricer] Parsing quantity from:', fullText);
-
-        // Match patterns like "x19 Edelweiss" or "x1 Item Name"
         const match = fullText.match(/x(\d+)/i);
         if (match) {
-            const quantity = parseInt(match[1], 10);
-            console.log('[BazaarQuickPricer] Found quantity:', quantity);
-            return quantity;
+            return parseInt(match[1], 10);
         }
-
-        console.log('[BazaarQuickPricer] No quantity found, defaulting to 1');
+        
         return 1;
-    }
-
-    // Get item value from page
-    function getItemValueFromPage(itemElement) {
-        // Look for the "Value: $X,XXX" text on the page
-        const valueElements = itemElement.querySelectorAll('li');
-        for (let li of valueElements) {
-            const text = li.innerText || li.textContent;
-            if (text.includes('Value:')) {
-                // Extract number from "Value: $3,241"
-                const match = text.match(/Value:\s*\$?([\d,]+)/i);
-                if (match) {
-                    const value = parseInt(match[1].replace(/,/g, ''), 10);
-                    console.log('[BazaarQuickPricer] Found item value on page:', value);
-                    return value;
-                }
-            }
-        }
-        return null;
     }
 
     // Fetch item data using Torn API to get market_value
     function fetchItemData(itemId, callback) {
-        // Check cache first
         const now = Date.now();
         if (CONFIG.priceCache[itemId] && (now - CONFIG.lastPriceUpdate < CONFIG.cacheTimeout)) {
-            console.log(`[BazaarQuickPricer] Using cached price for item ${itemId}`);
             callback(CONFIG.priceCache[itemId]);
             return;
         }
 
-        // Use the torn API to get item information including market_value
         const itemUrl = `https://api.torn.com/torn/${itemId}?selections=items&key=${CONFIG.apiKey}&comment=BazaarQuickPricer`;
+        
         GM_xmlhttpRequest({
             method: 'GET',
             url: itemUrl,
             onload: function(response) {
                 try {
                     const data = JSON.parse(response.responseText);
-
+                    
                     if (data.error) {
                         console.error(`[BazaarQuickPricer] API Error for item ${itemId}:`, data.error);
                         if (data.error.code === 2) {
@@ -244,17 +240,15 @@
                         return;
                     }
 
-                    // Get the market_value from the items data
                     if (data.items && data.items[itemId]) {
                         const marketValue = data.items[itemId].market_value;
-                        console.log(`[BazaarQuickPricer] Item ${itemId} market_value: $${marketValue.toLocaleString()}`);
                         CONFIG.priceCache[itemId] = marketValue;
                         CONFIG.lastPriceUpdate = now;
                         saveConfig();
                         callback(marketValue);
                         return;
                     }
-
+                    
                     callback(0);
                 } catch (e) {
                     console.error(`[BazaarQuickPricer] Error parsing data for item ${itemId}:`, e);
@@ -270,8 +264,8 @@
 
     // Add Quick Price button to an item
     function addQuickPriceButton(itemElement) {
-        // Check if already processed
         if (itemElement.querySelector('.quick-price-btn')) return;
+
         const nameWrap = itemElement.querySelector('div.title-wrap div.name-wrap');
         if (!nameWrap) return;
 
@@ -287,86 +281,71 @@
         const priceInputs = amountDiv.querySelectorAll('div.price div input');
         if (priceInputs.length === 0) return;
 
-        // Create button
         const btnWrap = document.createElement('span');
         btnWrap.className = 'btn-wrap quick-price-btn';
         btnWrap.style.cssText = 'float: right; margin-left: auto;';
 
         const btnSpan = document.createElement('span');
         btnSpan.className = 'btn';
+
         const btnInput = document.createElement('input');
         btnInput.type = 'button';
-        btnInput.value = '💰 Add';
+        btnInput.value = 'Add';
         btnInput.className = 'torn-btn';
         btnInput.style.cssText = 'background: linear-gradient(to bottom, #5cb85c, #4cae4c); color: white; font-size: 11px;';
 
         btnSpan.appendChild(btnInput);
         btnWrap.appendChild(btnSpan);
         nameWrap.appendChild(btnWrap);
-        // Add click handler
+
         $(btnWrap).on('click', 'input', function(event) {
             event.stopPropagation();
-
+            
             btnInput.value = 'Loading...';
             btnInput.disabled = true;
 
             fetchItemData(itemId, (marketValue) => {
                 btnInput.disabled = false;
-                btnInput.value = '💰 Add';
+                btnInput.value = 'Add';
 
                 if (marketValue > 0) {
-                    // Calculate discount amount: 1% of market value
                     const discountAmount = marketValue * (CONFIG.defaultDiscount / 100);
-                    // Subtract discount from market value
                     const finalPrice = Math.round(marketValue - discountAmount);
-
-                    console.log(`[BazaarQuickPricer] Item ${itemId}:`);
-                    console.log(`  Market Value: $${marketValue.toLocaleString()}`);
-                    console.log(`  Discount: ${CONFIG.defaultDiscount}% = $${discountAmount.toFixed(2)}`);
-                    console.log(`  Final Price: $${finalPrice.toLocaleString()}`);
-                    // Set price (without commas for the value, Torn will format it)
+                    
                     priceInputs[0].value = finalPrice;
                     priceInputs[1].value = finalPrice;
-
+                    
                     const inputEvent = new Event('input', { bubbles: true });
                     priceInputs[0].dispatchEvent(inputEvent);
-                    // Set quantity
+
                     const isQuantityCheckbox = amountDiv.querySelector('div.amount.choice-container') !== null;
                     if (isQuantityCheckbox) {
-                        // For guns/items with checkbox
                         const checkbox = amountDiv.querySelector('div.amount.choice-container input');
                         if (checkbox && !checkbox.checked) {
                             checkbox.click();
                         }
-                        console.log('[BazaarQuickPricer] Clicked checkbox for max quantity');
                     } else {
-                        // For regular items with quantity input
                         const quantityInput = amountDiv.querySelector('div.amount input');
                         if (quantityInput) {
                             const quantity = getQuantity(itemElement);
                             quantityInput.value = quantity;
-
-                            // Dispatch multiple events to ensure Torn recognizes the change
+                            
                             const keyupEvent = new Event('keyup', { bubbles: true });
                             const changeEvent = new Event('change', { bubbles: true });
                             const inputEvt = new Event('input', { bubbles: true });
-
+                            
                             quantityInput.dispatchEvent(inputEvt);
                             quantityInput.dispatchEvent(keyupEvent);
                             quantityInput.dispatchEvent(changeEvent);
-
-                            console.log(`[BazaarQuickPricer] Set quantity to ${quantity}`);
                         }
                     }
 
-                    // Visual feedback
                     priceInputs[0].style.border = '2px solid #5cb85c';
                     priceInputs[0].style.background = '#f0fff0';
                     setTimeout(() => {
                         priceInputs[0].style.border = '';
                         priceInputs[0].style.background = '';
                     }, 1500);
-                    console.log(`[BazaarQuickPricer] Successfully configured item ${itemId}`);
                 } else {
                     alert(`Could not fetch market value for this item (ID: ${itemId})`);
                 }
@@ -378,7 +357,7 @@
     function processAllItems() {
         const items = $('ul.items-cont li.clearfix:not(.disabled)');
         console.log(`[BazaarQuickPricer] Found ${items.length} items to process`);
-
+        
         items.each(function() {
             addQuickPriceButton(this);
         });
@@ -396,7 +375,7 @@
         const observer = new MutationObserver(function(mutations) {
             let shouldProcess = false;
             mutations.forEach(mutation => {
-                if (mutation.target.classList.contains('items-cont') ||
+                if (mutation.target.classList.contains('items-cont') || 
                     mutation.target.className.indexOf('core-layout___') > -1 ||
                     mutation.target.classList.contains('ReactVirtualized__Grid__innerScrollContainer')) {
                     shouldProcess = true;
@@ -407,29 +386,52 @@
                 setTimeout(processAllItems, 100);
             }
         });
-        observer.observe(observerTarget, {
-            attributes: false,
-            childList: true,
-            characterData: false,
-            subtree: true
+
+        observer.observe(observerTarget, { 
+            attributes: false, 
+            childList: true, 
+            characterData: false, 
+            subtree: true 
         });
+
         console.log('[BazaarQuickPricer] Observer set up successfully');
     }
 
-    // Helper to wait for an element to appear
-    function waitForElement(selector, callback, maxTries = 50) {
-        let retries = 0;
-        const check = setInterval(() => {
-            const element = document.querySelector(selector);
-            if (element) {
-                clearInterval(check);
-                callback(element);
-            } else if (retries++ >= maxTries) {
-                clearInterval(check);
-                console.warn(`[BazaarQuickPricer] Element ${selector} not found after waiting.`);
-                callback(null);
-            }
-        }, 100); // Check every 100ms
+    // Add settings icon to bazaar header
+    function addSettingsIcon() {
+        const iconsDiv = document.querySelector('h4.title-black + div.icons');
+        
+        if (iconsDiv) {
+            const settingsLink = document.createElement('a');
+            settingsLink.href = '#';
+            settingsLink.className = 'personalize t-clear h-icon';
+            settingsLink.style.cssText = 'margin-left: 5px;';
+            
+            const iconSpan = document.createElement('span');
+            iconSpan.className = 'personalize-icon';
+            iconSpan.style.cssText = `
+                display: inline-block;
+                width: 20px;
+                height: 20px;
+                background: none;
+                font-size: 18px;
+                line-height: 20px;
+                text-align: center;
+            `;
+            iconSpan.textContent = '⚙️';
+            
+            settingsLink.appendChild(iconSpan);
+            settingsLink.onclick = (e) => {
+                e.preventDefault();
+                showSettingsPanel();
+            };
+            
+            iconsDiv.appendChild(settingsLink);
+            console.log('[BazaarQuickPricer] Settings icon added to header');
+            return true;
+        }
+        
+        return false;
     }
 
     // Initialize
@@ -441,36 +443,14 @@
 
         console.log('[BazaarQuickPricer] Initialized');
 
-        // --- NEW IMPLEMENTATION: Embed settings button ---
-        // We use a fuzzy selector [class*="actions-root"] to find the container
-        // even if the random characters at the end change.
-        waitForElement('div[class*="actions-root"]', (targetContainer) => {
-            if (targetContainer) {
-                // Check if button already exists
-                if (document.getElementById('bazaar-pricer-settings-btn')) return;
-
-                // Create the new button element
-                const settingsBtn = document.createElement('button');
-                settingsBtn.id = 'bazaar-pricer-settings-btn';
-                settingsBtn.type = 'button';
-                settingsBtn.className = 'icon-wrap-root___TSzPY'; // Matches Torn style
-                settingsBtn.setAttribute('data-title', 'Bazaar Quick Pricer Settings');
-                settingsBtn.setAttribute('tabindex', '0');
-                settingsBtn.setAttribute('aria-label', 'Bazaar Quick Pricer Settings');
-
-                // Set the content as the ⚙️ icon
-                settingsBtn.innerHTML = '<span class="icon" aria-hidden="true" style="font-size: 18px; line-height: 1; display: inline-block;">⚙️</span>';
-
-                settingsBtn.onclick = showSettingsPanel;
-
-                // Inject the button
-                targetContainer.prepend(settingsBtn);
-                console.log('[BazaarQuickPricer] Settings button embedded successfully.');
-            } else {
-                // Fallback: Floating button
-                const fallbackSettingsBtn = document.createElement('button');
-                fallbackSettingsBtn.textContent = '⚙️ Settings';
-                fallbackSettingsBtn.style.cssText = `
+        setTimeout(() => {
+            const success = addSettingsIcon();
+            
+            if (!success) {
+                console.warn('[BazaarQuickPricer] Could not find icons div, using floating button');
+                const fallbackBtn = document.createElement('button');
+                fallbackBtn.textContent = '⚙️ Settings';
+                fallbackBtn.style.cssText = `
                     position: fixed;
                     top: 100px;
                     right: 20px;
@@ -485,20 +465,17 @@
                     box-shadow: 0 2px 10px rgba(0,0,0,0.2);
                     font-weight: bold;
                 `;
-                fallbackSettingsBtn.onclick = showSettingsPanel;
-                document.body.appendChild(fallbackSettingsBtn);
-                console.warn('[BazaarQuickPricer] Target container not found. Using fallback button.');
+                fallbackBtn.onclick = showSettingsPanel;
+                document.body.appendChild(fallbackBtn);
             }
-        });
+        }, 1500);
 
-        // Process items and set up observer
         setTimeout(() => {
             processAllItems();
             setupObserver();
         }, 1000);
     }
 
-    // Run on page load
     if (window.location.href.includes('bazaar.php')) {
         window.addEventListener('load', init);
     }
