@@ -1,7 +1,7 @@
 # Torn Bazaar Quick Pricer
 
 **Author:** Zedtrooper [3028329]  
-**Current Version:** 2.0
+**Current Version:** 2.1
 
 A Tampermonkey userscript for the text-based RPG [Torn](https://www.torn.com) that streamlines the process of adding items to your **Bazaar**. It automatically fetches current market values via the Torn API and prices your items competitively with a single click.
 
@@ -25,7 +25,7 @@ A Tampermonkey userscript for the text-based RPG [Torn](https://www.torn.com) th
     * [Violentmonkey](https://violentmonkey.top/)
     * Also supports Torn PDA android app
 2.  **Install the Script:**
-    * Find the script file (usually named `Torn Bazaar Quick Pricer.js`) and paste the code into a new userscript in your manager.
+    * Head over to (https://greasyfork.org/en/scripts/558562-torn-bazaar-quick-pricer) tap the green install button on the website to install the script.
 3.  **Reload Torn:**
     * Refresh your Torn Bazaar page to initialize the script.
 
