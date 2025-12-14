@@ -1,7 +1,7 @@
 # Torn Bazaar Quick Pricer
 
 **Author:** Zedtrooper [3028329]  
-**Current Version:** 2.1
+**Current Version:** 2.2
 
 A userscript for the text-based RPG [Torn](https://www.torn.com) that streamlines the process of adding items to your **Bazaar**. It automatically fetches current market values via the Torn API and prices your items competitively with a single click.
 
