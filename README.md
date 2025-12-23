@@ -1,7 +1,7 @@
 # Torn Bazaar Quick Pricer
 
 **Author:** Zedtrooper [3028329]  
-**Current Version:** 2.2
+**Current Version:** 2.3
 
 A userscript for the text-based RPG [Torn](https://www.torn.com) that streamlines the process of adding items to your **Bazaar**. It automatically fetches current market values via the Torn API and prices your items competitively with a single click.
 
@@ -42,7 +42,7 @@ Upon first use, the script will prompt you for your **Public API Key**.
 
 ### Changing Settings
 You can adjust your pricing strategy at any time:
-* Look for the **⚙️ (Gear Icon)** located next to your Bazaar title.
+* Look for the **Setting icon** located next to your Bazaar title.
 * **Discount Percentage:** Set how much to undercut the market (default is **1%**).
 * **Price Floor:** Set a warning threshold percentage.
 * **Clear Cache:** Force the script to re-fetch fresh prices.
