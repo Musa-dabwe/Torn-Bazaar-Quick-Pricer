@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.8.3
+// @version      2.8.4
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -18,7 +18,7 @@
 (function() {
     'use strict';
 
-    console.log('[BazaarQuickPricer] v2.8.3 Starting (PDA optimized)...');
+    console.log('[BazaarQuickPricer] v2.8.4 Starting (PDA optimized)...');
 
     // Configuration
     const CONFIG = {
@@ -33,19 +33,64 @@
     const processedItems = new WeakSet();
     const processedManageItems = new WeakSet();
     let mutationDebounceTimer = null;
+
+    // Inject Theme-Consistent CSS
+    const style = document.createElement('style');
+    style.textContent = `
+        .qp-btn {
+            background: var(--default-panel-gradient, #5F5F5F);
+            color: var(--default-gray-9-color, white);
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            transition: filter 0.2s;
+            padding: 8px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .qp-btn:hover {
+            filter: brightness(0.8);
+        }
+        .qp-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .qp-btn-red {
+            background: var(--default-red-color, #E3392C) !important;
+            color: white !important;
+        }
+        .qp-btn-top {
+            padding: 8px 14px;
+            margin-left: 5px;
+        }
+        .qp-btn-update {
+            padding: 6px;
+            margin-left: 10px;
+        }
+        .qp-btn-settings {
+            border-radius: 0 4px 4px 0;
+        }
+        .qp-btn-fill {
+            border-radius: 4px 0 0 4px;
+            border-right: 1px solid rgba(0,0,0,0.1);
+        }
+        .quick-price-btn {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+        }
+    `;
+    document.head.appendChild(style);
     const isMobile = window.innerWidth <= 784;
     let buttonsAdded = false;
     let manageButtonsAdded = false;
 
-    // Detect dark mode
-    function isDarkMode() {
-        return document.body.classList.contains('dark-mode');
-    }
-
-    // Get appropriate text color based on theme
-    function getTextColor() {
-        return isDarkMode() ? '#767676' : '#7F7F7F';
-    }
 
     function saveConfig() {
         GM_setValue('discountPercent', CONFIG.defaultDiscount);
@@ -123,7 +168,7 @@
                 </div>
                 <div style="margin-top:15px;padding-top:15px;border-top:1px solid #555;text-align:center;">
                     <small style="color:#999;font-size:12px;">
-                        v2.8.3 | <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" style="color:#2196F3;">GitHub</a>
+                        v2.8.4 | <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" style="color:#2196F3;">GitHub</a>
                     </small>
                 </div>
             </div>
@@ -167,7 +212,7 @@
     }
 
     function getQuantity(itemElement) {
-        const titleWrap = itemElement.querySelector('div.title-wrap');
+        const titleWrap = itemElement.querySelector('div[class*="name___"], div.title-wrap');
         if (!titleWrap) return 1;
         const match = titleWrap.textContent.match(/x(\d+)/i);
         return match ? parseInt(match[1], 10) : 1;
@@ -256,42 +301,46 @@
 
     // Helper to clear inputs
     function clearItemInputs(itemElement) {
-        const amountDiv = itemElement.querySelector('div.amount-main-wrap');
-        if (!amountDiv) return;
+        const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
+        const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
 
         // 1. Clear Price Inputs
-        const priceInputs = amountDiv.querySelectorAll('div.price div input');
-        priceInputs.forEach(input => {
-            input.value = '';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-        });
+        if (priceDiv) {
+            const priceInputs = priceDiv.querySelectorAll('input');
+            priceInputs.forEach(input => {
+                input.value = '';
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+            });
+        }
 
         // 2. Clear Quantity or Uncheck
-        const isQuantityCheckbox = amountDiv.querySelector('div.amount.choice-container');
-        if (isQuantityCheckbox) {
-            // If it's a checkbox (common for single items), uncheck it
-            const checkbox = isQuantityCheckbox.querySelector('input');
-            if (checkbox && checkbox.checked) checkbox.click();
-        } else {
-            // If it's a text input (bulk items), clear the text
-            const quantityInput = amountDiv.querySelector('div.amount input');
-            if (quantityInput) {
-                quantityInput.value = ''; 
-                quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+        if (amountDiv) {
+            const isQuantityCheckbox = amountDiv.querySelector('div.choice-container, [class*="choiceContainer___"]');
+            if (isQuantityCheckbox) {
+                const checkbox = isQuantityCheckbox.querySelector('input');
+                if (checkbox && checkbox.checked) checkbox.click();
+            } else {
+                const quantityInput = amountDiv.querySelector('input');
+                if (quantityInput) {
+                    quantityInput.value = '';
+                    quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+                }
             }
         }
     }
 
     function fillItemPrice(itemElement) {
-        const image = itemElement.querySelector('div.image-wrap img');
+        const image = itemElement.querySelector('img');
         if (!image) return Promise.resolve();
 
         const itemId = getItemIdFromImage(image);
         if (!itemId) return Promise.resolve();
 
-        const amountDiv = itemElement.querySelector('div.amount-main-wrap');
-        if (!amountDiv) return Promise.resolve();
-        const priceInputs = amountDiv.querySelectorAll('div.price div input');
+        const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
+        const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
+
+        if (!priceDiv) return Promise.resolve();
+        const priceInputs = priceDiv.querySelectorAll('input');
         if (priceInputs.length === 0) return Promise.resolve();
 
         return new Promise((resolve) => {
@@ -299,27 +348,30 @@
                 if (marketValue > 0) {
                     const finalPrice = calculateFinalPrice(marketValue, sellPrice, CONFIG.defaultDiscount);
 
-                    priceInputs[0].value = finalPrice;
-                    priceInputs[1].value = finalPrice;
-                    priceInputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+                    priceInputs.forEach(input => {
+                        input.value = finalPrice;
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    });
 
-                    const isQuantityCheckbox = amountDiv.querySelector('div.amount.choice-container');
-                    if (isQuantityCheckbox) {
-                        const checkbox = isQuantityCheckbox.querySelector('input');
-                        if (checkbox && !checkbox.checked) checkbox.click();
-                    } else {
-                        const quantityInput = amountDiv.querySelector('div.amount input');
-                        if (quantityInput) {
-                            quantityInput.value = getQuantity(itemElement);
-                            quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+                    if (amountDiv) {
+                        const isQuantityCheckbox = amountDiv.querySelector('div.choice-container, [class*="choiceContainer___"]');
+                        if (isQuantityCheckbox) {
+                            const checkbox = isQuantityCheckbox.querySelector('input');
+                            if (checkbox && !checkbox.checked) checkbox.click();
+                        } else {
+                            const quantityInput = amountDiv.querySelector('input');
+                            if (quantityInput) {
+                                quantityInput.value = getQuantity(itemElement);
+                                quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+                                quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+                            }
                         }
                     }
 
                     // UPDATE BUTTON VISUALS FOR UNDO
                     const btn = itemElement.querySelector('.quick-price-btn button');
                     if (btn) {
-                        btn.style.background = '#E3392C'; // Red
+                        btn.classList.add('qp-btn-red');
                         btn.dataset.mode = 'undo';
                     }
                 }
@@ -329,10 +381,10 @@
     }
 
     function getActiveTab() {
-        const tabs = document.querySelectorAll('ul.items-tabs li');
+        const tabs = document.querySelectorAll('ul.items-tabs li, div[class*="item___UN3Mg"]');
         for (const tab of tabs) {
-            if (tab.classList.contains('active')) {
-                return tab.getAttribute('data-category') || 'all';
+            if (tab.classList.contains('active') || tab.className.includes('active___')) {
+                return tab.getAttribute('data-category') || tab.textContent.trim().toLowerCase() || 'all';
             }
         }
         return 'all';
@@ -340,23 +392,24 @@
 
     function getVisibleItems() {
         const activeTab = getActiveTab();
-        const allItemsLists = document.querySelectorAll('ul.items-cont');
+        const allItemsLists = document.querySelectorAll('ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"]');
 
+        let visibleItems = [];
         for (const list of allItemsLists) {
             const style = window.getComputedStyle(list);
             if (style.display !== 'none') {
-                const items = list.querySelectorAll('li.clearfix:not(.disabled)');
-                return Array.from(items);
+                const items = list.querySelectorAll('li.clearfix:not(.disabled), div[class*="item___GYCYJ"], div[class*="item___khvF6"]');
+                visibleItems = visibleItems.concat(Array.from(items).filter(item => !item.className.includes('item___UN3Mg')));
             }
         }
 
-        return [];
+        return visibleItems;
     }
 
     // ===== MANAGE ITEMS PAGE FUNCTIONS =====
 
     function updateManageItemPrice(priceDiv, itemId) {
-        const priceInput = priceDiv.querySelector('input.input-money');
+        const priceInput = priceDiv.querySelector('input.input-money, input');
         if (!priceInput) return;
 
         const currentPrice = parseInt(priceInput.value.replace(/,/g, '')) || 0;
@@ -402,6 +455,8 @@
 
     function addUpdatePriceButton(manageItem) {
         if (processedManageItems.has(manageItem)) return;
+        if (manageItem.className.includes('item___UN3Mg')) return;
+
         const priceDiv = manageItem.querySelector('div[class*="price"]');
         if (!priceDiv) return;
 
@@ -421,24 +476,20 @@
         // Create update button
         const btnContainer = document.createElement('div');
         btnContainer.className = 'quick-update-price-btn';
-        btnContainer.style.cssText = 'display:inline-block;margin-left:10px;vertical-align:middle;';
+        btnContainer.style.cssText = 'display:inline-block;vertical-align:middle;';
 
         const btnInput = document.createElement('button');
         btnInput.innerHTML = refreshSVG;
-        btnInput.style.cssText = 'background:#5F5F5F;color:white;padding:6px;border:none;border-radius:4px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,0.2);transition:background 0.2s;';
+        btnInput.className = 'qp-btn qp-btn-update';
         btnInput.setAttribute('title', 'Update Price');
-        btnInput.addEventListener('mouseenter', () => {
-            btnInput.style.background = '#4F4F4F';
-        });
-        btnInput.addEventListener('mouseleave', () => {
-            if (!btnInput.disabled) btnInput.style.background = '#5F5F5F';
-        });
         btnContainer.appendChild(btnInput);
 
         // Insert button after the price input
-        const inputGroup = priceDiv.querySelector('.input-money-group');
+        const inputGroup = priceDiv.querySelector('.input-money-group, div[class*="input___"]');
         if (inputGroup) {
             inputGroup.parentNode.insertBefore(btnContainer, inputGroup.nextSibling);
+        } else {
+            priceDiv.appendChild(btnContainer);
         }
 
         btnInput.addEventListener('click', function(event) {
@@ -451,7 +502,7 @@
     function getManageItems() {
         // Look for manage items list
         const manageItemsList = document.querySelectorAll('div[class*="item___"]');
-        return Array.from(manageItemsList);
+        return Array.from(manageItemsList).filter(item => !item.className.includes('item___UN3Mg'));
     }
 
     async function updateAllManagePrices() {
@@ -506,9 +557,9 @@
             attempts++;
 
             // Find header with broader selector support for current Torn UI
-            const headings = Array.from(document.querySelectorAll('div[role="heading"], div[class*="title"], div[class*="panelHeader"]'));
+            const headings = Array.from(document.querySelectorAll('div[role="heading"], div[class*="title"], div[class*="panelHeader"], div[class*="titleContainer"]'));
             // Look for "Manage your Bazaar" or "Manage items"
-            let manageHeading = headings.find(h => h.textContent.includes('Manage your Bazaar') || h.textContent.includes('Manage items'));
+            let manageHeading = headings.find(h => h.textContent.includes('Manage your Bazaar') || h.textContent.includes('Manage items') || h.textContent.includes('Manage Bazaar'));
 
             if (manageHeading) {
                 // Check for the SETTINGS button ID, which exists on both mobile and desktop
@@ -529,7 +580,7 @@
                 const updateAllBtn = document.createElement('button');
                 updateAllBtn.id = 'quickUpdateAllPricesBtn';
                 updateAllBtn.textContent = 'Update All';
-                updateAllBtn.style.cssText = 'background:#5F5F5F;color:white;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.2);';
+                updateAllBtn.className = 'qp-btn qp-btn-top';
                 updateAllBtn.setAttribute('title', 'Update all item prices to current market value');
                 updateAllBtn.addEventListener('click', updateAllManagePrices);
 
@@ -537,21 +588,11 @@
                 const settingsBtn = document.createElement('button');
                 settingsBtn.id = 'manageSettingsBtn';
                 settingsBtn.textContent = 'Settings';
-                settingsBtn.style.cssText = 'background:#5F5F5F;color:white;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,0.2);';
+                settingsBtn.className = 'qp-btn qp-btn-top';
                 settingsBtn.setAttribute('title', 'Open Quick Pricer settings');
                 settingsBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     showSettingsPanel();
-                });
-
-                // Add Hover Effects
-                [updateAllBtn, settingsBtn].forEach(btn => {
-                    btn.addEventListener('mouseenter', () => {
-                        if (!btn.disabled) btn.style.background = '#4F4F4F';
-                    });
-                    btn.addEventListener('mouseleave', () => {
-                        if (!btn.disabled) btn.style.background = '#5F5F5F';
-                    });
                 });
 
                 // Only add "Update All" button if NOT on mobile
@@ -583,7 +624,7 @@
 
     function addQuickPriceButton(itemElement) {
         if (processedItems.has(itemElement)) return;
-        const titleWrap = itemElement.querySelector('div.title-wrap');
+        const titleWrap = itemElement.querySelector('div[class*="name___"], div.title-wrap');
         if (!titleWrap) return;
 
         if (titleWrap.querySelector('.quick-price-btn')) {
@@ -606,32 +647,12 @@
 
         const btnContainer = document.createElement('div');
         btnContainer.className = 'quick-price-btn';
-        btnContainer.style.cssText = 'position:absolute;right:10px;top:50%;transform:translateY(-50%);z-index:10;';
 
         const btnInput = document.createElement('button');
         btnInput.innerHTML = addButtonSVG;
-        btnInput.style.cssText = 'background:#5F5F5F;color:white;padding:8px;border:none;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 4px rgba(0,0,0,0.2);transition:background 0.2s;';
+        btnInput.className = 'qp-btn';
         btnInput.setAttribute('title', 'Quick Add / Undo');
         btnInput.dataset.mode = 'add'; // Default mode
-
-        // Handle Hover based on mode
-        btnInput.addEventListener('mouseenter', () => {
-            if (btnInput.dataset.mode === 'undo') {
-                btnInput.style.background = '#C03025'; // Darker red
-            } else {
-                btnInput.style.background = '#4F4F4F'; // Darker grey
-            }
-        });
-
-        btnInput.addEventListener('mouseleave', () => {
-            if (!btnInput.disabled) {
-                if (btnInput.dataset.mode === 'undo') {
-                    btnInput.style.background = '#E3392C'; // Red
-                } else {
-                    btnInput.style.background = '#5F5F5F'; // Grey
-                }
-            }
-        });
 
         btnContainer.appendChild(btnInput);
         titleWrap.style.position = 'relative';
@@ -645,7 +666,7 @@
                 // UNDO ACTION
                 clearItemInputs(itemElement);
                 // Reset styling
-                btnInput.style.background = '#5F5F5F';
+                btnInput.classList.remove('qp-btn-red');
                 btnInput.dataset.mode = 'add';
             } else {
                 // ADD ACTION
@@ -690,13 +711,15 @@
     function addTopButtons() {
         if (buttonsAdded) return;
         let attempts = 0;
-        const maxAttempts = 20;
+        const maxAttempts = 30;
 
         const tryAddButtons = setInterval(() => {
             attempts++;
-            const titleSection = document.querySelector('div.title-black');
+            // Broad search for any header-like element that might contain the text
+            const potentialHeaders = Array.from(document.querySelectorAll('div[class*="titleContainer___"], div[class*="panelHeader___"], div.title-black, div[class*="title___"]'));
+            const titleSection = potentialHeaders.find(h => h.textContent.includes('Add items to your Bazaar') || h.textContent.includes('Add items'));
 
-            if (titleSection && titleSection.textContent.includes('Add items to your Bazaar')) {
+            if (titleSection) {
                 if (document.getElementById('quickFillAllBtn')) {
                     clearInterval(tryAddButtons);
                     buttonsAdded = true;
@@ -712,27 +735,15 @@
                 const fillAllBtn = document.createElement('button');
                 fillAllBtn.id = 'quickFillAllBtn';
                 fillAllBtn.textContent = 'Quick Fill';
-                fillAllBtn.style.cssText = 'background:#5F5F5F;color:white;padding:8px 14px;border:none;border-radius:4px 0 0 4px;cursor:pointer;display:inline-flex;align-items:center;font-size:13px;box-shadow:0 2px 4px rgba(0,0,0,0.2);transition:background 0.2s;border-right:1px solid #4F4F4F;';
+                fillAllBtn.className = 'qp-btn qp-btn-fill';
                 fillAllBtn.setAttribute('title', 'Fill all items in current tab with market prices');
-                fillAllBtn.addEventListener('mouseenter', () => {
-                    if (!fillAllBtn.disabled) fillAllBtn.style.background = '#4F4F4F';
-                });
-                fillAllBtn.addEventListener('mouseleave', () => {
-                    if (!fillAllBtn.disabled) fillAllBtn.style.background = '#5F5F5F';
-                });
                 fillAllBtn.addEventListener('click', fillAllItems);
 
                 const settingsBtn = document.createElement('button');
                 settingsBtn.id = 'quickPricerSettingsBtn';
                 settingsBtn.textContent = 'Settings';
-                settingsBtn.style.cssText = 'background:#5F5F5F;color:white;padding:8px 14px;border:none;border-radius:0 4px 4px 0;cursor:pointer;display:inline-flex;align-items:center;font-size:13px;box-shadow:0 2px 4px rgba(0,0,0,0.2);transition:background 0.2s;';
+                settingsBtn.className = 'qp-btn qp-btn-settings';
                 settingsBtn.setAttribute('title', 'Open Quick Pricer settings');
-                settingsBtn.addEventListener('mouseenter', () => {
-                    settingsBtn.style.background = '#4F4F4F';
-                });
-                settingsBtn.addEventListener('mouseleave', () => {
-                    settingsBtn.style.background = '#5F5F5F';
-                });
                 settingsBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     showSettingsPanel();
@@ -750,10 +761,14 @@
     }
 
     function processAllItems() {
-        const items = document.querySelectorAll('ul.items-cont li.clearfix:not(.disabled)');
+        const items = document.querySelectorAll('ul.items-cont li.clearfix:not(.disabled), div[class*="itemsContainner___"] div[class*="item___"], div[class*="rowItems___"] div[class*="item___"]');
         console.log('[BazaarQuickPricer] Found', items.length, 'items');
         if (items.length > 0) {
-            items.forEach(item => addQuickPriceButton(item));
+            items.forEach(item => {
+                if (!item.className.includes('item___UN3Mg')) {
+                    addQuickPriceButton(item);
+                }
+            });
         }
     }
 
