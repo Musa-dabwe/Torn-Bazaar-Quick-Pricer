@@ -48,7 +48,7 @@
             justify-content: center;
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
             transition: filter 0.2s;
-            padding: 8px;
+            padding: 3px;
             font-size: 13px;
             font-weight: 700;
         }
@@ -64,11 +64,11 @@
             color: white !important;
         }
         .qp-btn-top {
-            padding: 8px 14px;
+            padding: 3px 9px;
             margin-left: 5px;
         }
         .qp-btn-update {
-            padding: 6px;
+            padding: 1px;
             margin-left: 10px;
         }
         .qp-btn-settings {
