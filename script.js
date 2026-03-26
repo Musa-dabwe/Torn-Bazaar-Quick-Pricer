@@ -78,13 +78,12 @@
             border-right: 1px solid rgba(0,0,0,0.1);
         }
         .quick-price-btn, .quick-update-price-btn {
-            position: absolute;
-            right: 5px;
-            top: 50%;
-            transform: translateY(-50%);
-            z-index: 10;
             display: flex;
             align-items: center;
+            flex-shrink: 0;
+            margin-left: auto;
+            padding-right: 5px;
+            z-index: 10;
         }
     `;
     document.head.appendChild(style);
@@ -484,8 +483,9 @@
         btnInput.setAttribute('title', 'Update Price');
         btnContainer.appendChild(btnInput);
 
-        // Position relative to priceDiv for absolute centering
-        priceDiv.style.position = 'relative';
+        // Position relative to priceDiv for flex centering
+        priceDiv.style.display = 'flex';
+        priceDiv.style.alignItems = 'center';
         priceDiv.appendChild(btnContainer);
 
         btnInput.addEventListener('click', function(event) {
@@ -653,7 +653,8 @@
         btnInput.dataset.mode = 'add'; // Default mode
 
         btnContainer.appendChild(btnInput);
-        descriptionCont.style.position = 'relative';
+        descriptionCont.style.display = 'flex';
+        descriptionCont.style.alignItems = 'center';
         descriptionCont.appendChild(btnContainer);
 
         // Click Handler (Toggle Add/Undo)
