@@ -69,7 +69,6 @@
         }
         .qp-btn-update {
             padding: 5px;
-            margin-left: 10px;
         }
         .qp-btn-settings {
             border-radius: 0 4px 4px 0;
@@ -78,12 +77,14 @@
             border-radius: 4px 0 0 4px;
             border-right: 1px solid rgba(0,0,0,0.1);
         }
-        .quick-price-btn {
+        .quick-price-btn, .quick-update-price-btn {
             position: absolute;
-            right: 10px;
+            right: 5px;
             top: 50%;
             transform: translateY(-50%);
             z-index: 10;
+            display: flex;
+            align-items: center;
         }
     `;
     document.head.appendChild(style);
@@ -476,7 +477,6 @@
         // Create update button
         const btnContainer = document.createElement('div');
         btnContainer.className = 'quick-update-price-btn';
-        btnContainer.style.cssText = 'display:inline-block;vertical-align:middle;';
 
         const btnInput = document.createElement('button');
         btnInput.innerHTML = refreshSVG;
@@ -484,13 +484,9 @@
         btnInput.setAttribute('title', 'Update Price');
         btnContainer.appendChild(btnInput);
 
-        // Insert button after the price input
-        const inputGroup = priceDiv.querySelector('.input-money-group, div[class*="input___"]');
-        if (inputGroup) {
-            inputGroup.parentNode.insertBefore(btnContainer, inputGroup.nextSibling);
-        } else {
-            priceDiv.appendChild(btnContainer);
-        }
+        // Position relative to priceDiv for absolute centering
+        priceDiv.style.position = 'relative';
+        priceDiv.appendChild(btnContainer);
 
         btnInput.addEventListener('click', function(event) {
             event.stopPropagation();
@@ -624,10 +620,12 @@
 
     function addQuickPriceButton(itemElement) {
         if (processedItems.has(itemElement)) return;
-        const titleWrap = itemElement.querySelector('div[class*="name___"], div.title-wrap');
-        if (!titleWrap) return;
 
-        if (titleWrap.querySelector('.quick-price-btn')) {
+        // Find the description container that usually contains the name
+        const descriptionCont = itemElement.querySelector('div[class*="description___"], div.title-wrap');
+        if (!descriptionCont) return;
+
+        if (descriptionCont.querySelector('.quick-price-btn')) {
             processedItems.add(itemElement);
             return;
         }
@@ -655,8 +653,8 @@
         btnInput.dataset.mode = 'add'; // Default mode
 
         btnContainer.appendChild(btnInput);
-        titleWrap.style.position = 'relative';
-        titleWrap.appendChild(btnContainer);
+        descriptionCont.style.position = 'relative';
+        descriptionCont.appendChild(btnContainer);
 
         // Click Handler (Toggle Add/Undo)
         btnInput.addEventListener('click', function(event) {
