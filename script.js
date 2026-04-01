@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.8.5
+// @version      2.8.4
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -19,7 +19,7 @@
 (function() {
     'use strict';
 
-    console.log('[BazaarQuickPricer] v2.8.5 Starting (PDA optimized)...');
+    console.log('[BazaarQuickPricer] v2.8.4 Starting (PDA optimized)...');
 
     // Configuration
     const CONFIG = {
