@@ -6,7 +6,6 @@
 // @author       Zedtrooper [3028329]
 // @license      MIT
 // @match        https://www.torn.com/bazaar.php*
-// @match        https://www.torn.com/imarket.php*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
@@ -28,8 +27,7 @@
         lastPriceUpdate: GM_getValue('lastPriceUpdate', 0),
         priceCache: GM_getValue('priceCache', {}),
         disableNpcCheck: GM_getValue('disableNpcCheck', false),
-        cacheTimeout: 5 * 60 * 1000,
-        settingsPos: GM_getValue('settingsPos', { top: '80px', left: '20px' })
+        cacheTimeout: 5 * 60 * 1000
     };
 
     const processedItems = new WeakSet();
@@ -76,7 +74,8 @@
             border-radius: 0 4px 4px 0;
         }
         .qp-btn-fill {
-            border-radius: 4px;
+            border-radius: 4px 0 0 4px;
+            border-right: 1px solid rgba(0,0,0,0.1);
         }
         .quick-price-btn, .quick-update-price-btn {
             display: flex;
@@ -85,17 +84,6 @@
             margin-left: auto;
             padding-right: 5px;
             z-index: 10;
-        }
-        .qp-floating-settings {
-            position: fixed;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            z-index: 100000;
-            cursor: move;
-            padding: 0;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            user-select: none;
         }
     `;
     document.head.appendChild(style);
@@ -110,14 +98,12 @@
         GM_setValue('lastPriceUpdate', CONFIG.lastPriceUpdate);
         GM_setValue('priceCache', CONFIG.priceCache);
         GM_setValue('disableNpcCheck', CONFIG.disableNpcCheck);
-        GM_setValue('settingsPos', CONFIG.settingsPos);
     }
 
     // Custom SVGs
     const addButtonSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3,7.5v11c0,1.38,1.12,2.5,2.5,2.5h1c.83,0,1.5,.67,1.5,1.5s-.67,1.5-1.5,1.5h-1c-3.03,0-5.5-2.47-5.5-5.5V7.5C0,4.47,2.47,2,5.5,2h.35c.56-1.18,1.76-2,3.15-2h2c1.39,0,2.59,.82,3.15,2h.35c1.96,0,3.78,1.05,4.76,2.75,.42,.72,.17,1.63-.55,2.05-.24,.14-.49,.2-.75,.2-.52,0-1.02-.27-1.3-.75-.45-.77-1.28-1.25-2.17-1.25h-.35c-.56,1.18-1.76,2-3.15,2h-2c-1.39,0-2.59-.82-3.15-2h-.35c-1.38,0-2.5,1.12-2.5,2.5Zm14.5,6.5h-1c-.83,0-1.5,.67-1.5,1.5s.67,1.5,1.5,1.5h1c.83,0,1.5-.67,1.5-1.5s-.67-1.5-1.5-1.5Zm6.5-.5v6c0,2.48-2.02,4.5-4.5,4.5h-5c-2.48,0-4.5-2.02-4.5-4.5v-6c0-2.48,2.02-4.5,4.5-4.5h5c2.48,0,4.5,2.02,4.5,4.5Zm-3,0c0-.83-.67-1.5-1.5-1.5h-5c-.83,0-1.5,.67-1.5,1.5v6c0,.83,.67,1.5,1.5,1.5h5c.83,0,1.5-.67,1.5-1.5v-6Z"/></svg>`;
     const refreshSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12,2C6.48,2,2,6.48,2,12s4.48,10,10,10,10-4.48,10-10S17.52,2,12,2Zm0,18c-4.41,0-8-3.59-8-8s3.59-8,8-8,8,3.59,8,8-3.59,8-8,8Zm-1-13h2v6h-2v-6Zm0,8h2v2h-2v-2Z"/><path d="M13,7v6h4l-5,5-5-5h4V7h2Z" transform="translate(0,-1)"/></svg>`;
     const infoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12,2A10,10,0,1,0,22,12,10,10,0,0,0,12,2Zm1,15a1,1,0,0,1-2,0V11a1,1,0,0,1,2,0ZM12,8a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,12,8Z"/></svg>`;
-    const settingsSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="currentColor"><path d="M19.43,12.98c0.04-0.32,0.07-0.64,0.07-0.98s-0.03-0.66-0.07-0.98l2.11-1.65c0.19-0.15,0.24-0.42,0.12-0.64l-2-3.46 c-0.12-0.22-0.39-0.31-0.61-0.22l-2.49,1c-0.52-0.4-1.08-0.73-1.69-0.98l-0.38-2.65C14.46,2.18,14.25,2,14,2h-4 C9.75,2,9.54,2.18,9.51,2.42L9.13,5.07c-0.6,0.25-1.17,0.59-1.69,0.98l-2.49-1c-0.22-0.09-0.49,0-0.61,0.22l-2,3.46 c-0.12,0.22-0.07,0.49,0.12,0.64l2.11,1.65c-0.04,0.32-0.07,0.65-0.07,0.98s0.03,0.66,0.07,0.98l-2.11,1.65 c-0.19,0.15-0.24,0.42-0.12,0.64l2,3.46c0.12,0.22,0.39,0.31,0.61,0.22l2.49-1c0.52,0.4,1.08,0.73,1.69,0.98l0.38,2.65 C9.54,21.82,9.75,22,10,22h4c0.25,0,0.46-0.18,0.49-0.42l0.38-2.65c0.61-0.25,1.17-0.59,1.69-0.98l2.49,1 c0.22,0.09,0.49,0,0.61-0.22l2-3.46c0.12-0.22,0.07-0.49-0.12-0.64L19.43,12.98z M12,15.5c-1.93,0-3.5-1.57-3.5-3.5 s1.57-3.5,3.5-3.5s3.5,1.57,3.5,3.5S13.93,15.5,12,15.5z"/></svg>`;
 
     function showApiKeyPrompt() {
         const overlay = document.createElement('div');
@@ -147,76 +133,6 @@
             }
         };
         document.getElementById('cancelApiKey').onclick = () => overlay.remove();
-    }
-
-    function updateFloatingSettingsVisibility() {
-        const hash = window.location.hash;
-        const btn = document.getElementById('qp-floating-settings');
-        if (!btn) return;
-
-        const isBazaarAdd = window.location.pathname.includes('bazaar.php') && (hash.includes('/p=add') || hash === '');
-        const isBazaarManage = window.location.pathname.includes('bazaar.php') && hash.includes('/p=manage');
-        const isItemMarketAdd = window.location.pathname.includes('imarket.php') && (hash.includes('/addListing') || hash.includes('/p=addListing'));
-
-        if (isBazaarAdd || isBazaarManage || isItemMarketAdd) {
-            btn.style.display = 'flex';
-        } else {
-            btn.style.display = 'none';
-        }
-    }
-
-    function createFloatingSettingsButton() {
-        if (document.getElementById('qp-floating-settings')) return;
-
-        const btn = document.createElement('button');
-        btn.id = 'qp-floating-settings';
-        btn.className = 'qp-btn qp-floating-settings';
-        btn.innerHTML = settingsSVG;
-        btn.style.top = CONFIG.settingsPos.top;
-        btn.style.left = CONFIG.settingsPos.left;
-        btn.setAttribute('title', 'Quick Pricer Settings');
-
-        let isDragging = false;
-        let offsetTop, offsetLeft;
-
-        btn.addEventListener('mousedown', (e) => {
-            isDragging = true;
-            offsetTop = e.clientY - btn.offsetTop;
-            offsetLeft = e.clientX - btn.offsetLeft;
-            btn.style.transition = 'none';
-        });
-
-        document.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-
-            let top = e.clientY - offsetTop;
-            let left = e.clientX - offsetLeft;
-
-            // Boundary checks
-            top = Math.max(0, Math.min(window.innerHeight - 40, top));
-            left = Math.max(0, Math.min(window.innerWidth - 40, left));
-
-            btn.style.top = top + 'px';
-            btn.style.left = left + 'px';
-        });
-
-        document.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                CONFIG.settingsPos = { top: btn.style.top, left: btn.style.left };
-                saveConfig();
-                btn.style.transition = 'filter 0.2s';
-            }
-        });
-
-        btn.addEventListener('click', (e) => {
-            if (isDragging) return;
-            showSettingsPanel();
-        });
-
-        document.body.appendChild(btn);
-        updateFloatingSettingsVisibility();
-        window.addEventListener('hashchange', updateFloatingSettingsVisibility);
     }
 
     function showSettingsPanel() {
@@ -296,21 +212,10 @@
     }
 
     function getQuantity(itemElement) {
-        // Bazaar
         const titleWrap = itemElement.querySelector('div[class*="name___"], div.title-wrap');
-        if (titleWrap) {
-            const match = titleWrap.textContent.match(/x(\d+)/i);
-            if (match) return parseInt(match[1], 10);
-        }
-
-        // Item Market
-        const amountInput = itemElement.querySelector('div[class*="amountInputWrapper___"] input');
-        if (amountInput && amountInput.placeholder) {
-            const match = amountInput.placeholder.match(/(\d+)/);
-            if (match) return parseInt(match[1], 10);
-        }
-
-        return 1;
+        if (!titleWrap) return 1;
+        const match = titleWrap.textContent.match(/x(\d+)/i);
+        return match ? parseInt(match[1], 10) : 1;
     }
 
     const requestQueue = [];
@@ -382,11 +287,11 @@
         processRequestQueue();
     }
 
-    function calculateFinalPrice(marketValue, sellPrice, discount, skipNpcCheck = false) {
+    function calculateFinalPrice(marketValue, sellPrice, discount) {
         let finalPrice = Math.round(marketValue * (1 - discount / 100));
         
         // Safety Check
-        if (!skipNpcCheck && !CONFIG.disableNpcCheck && sellPrice > 0 && finalPrice < sellPrice) {
+        if (!CONFIG.disableNpcCheck && sellPrice > 0 && finalPrice < sellPrice) {
             console.log(`[BazaarQuickPricer] Price ${finalPrice} below NPC sell price ${sellPrice}, adjusting...`);
             finalPrice = sellPrice;
         }
@@ -396,13 +301,8 @@
 
     // Helper to clear inputs
     function clearItemInputs(itemElement) {
-        // Bazaar
         const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
         const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
-
-        // Item Market
-        const imPriceInput = itemElement.querySelector('div[class*="priceInputWrapper___"] input');
-        const imAmountInput = itemElement.querySelector('div[class*="amountInputWrapper___"] input');
 
         // 1. Clear Price Inputs
         if (priceDiv) {
@@ -411,10 +311,6 @@
                 input.value = '';
                 input.dispatchEvent(new Event('input', { bubbles: true }));
             });
-        }
-        if (imPriceInput) {
-            imPriceInput.value = '';
-            imPriceInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
         // 2. Clear Quantity or Uncheck
@@ -431,14 +327,10 @@
                 }
             }
         }
-        if (imAmountInput) {
-            imAmountInput.value = '';
-            imAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
-        }
     }
 
     function fillItemPrice(itemElement) {
-        const image = itemElement.querySelector('img[src*="/items/"]');
+        const image = itemElement.querySelector('img');
         if (!image) return Promise.resolve();
 
         const itemId = getItemIdFromImage(image);
@@ -447,30 +339,19 @@
         const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
         const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
 
-        const imPriceInput = itemElement.querySelector('div[class*="priceInputWrapper___"] input');
-        const imAmountInput = itemElement.querySelector('div[class*="amountInputWrapper___"] input');
-
-        if (!priceDiv && !imPriceInput) return Promise.resolve();
-
-        const isItemMarket = !!imPriceInput;
+        if (!priceDiv) return Promise.resolve();
+        const priceInputs = priceDiv.querySelectorAll('input');
+        if (priceInputs.length === 0) return Promise.resolve();
 
         return new Promise((resolve) => {
             fetchItemData(itemId, ({ marketValue, sellPrice }) => {
                 if (marketValue > 0) {
-                    const finalPrice = calculateFinalPrice(marketValue, sellPrice, CONFIG.defaultDiscount, isItemMarket);
+                    const finalPrice = calculateFinalPrice(marketValue, sellPrice, CONFIG.defaultDiscount);
 
-                    if (priceDiv) {
-                        const priceInputs = priceDiv.querySelectorAll('input');
-                        priceInputs.forEach(input => {
-                            input.value = finalPrice;
-                            input.dispatchEvent(new Event('input', { bubbles: true }));
-                        });
-                    }
-
-                    if (imPriceInput) {
-                        imPriceInput.value = finalPrice;
-                        imPriceInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    }
+                    priceInputs.forEach(input => {
+                        input.value = finalPrice;
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                    });
 
                     if (amountDiv) {
                         const isQuantityCheckbox = amountDiv.querySelector('div.choice-container, [class*="choiceContainer___"]');
@@ -485,11 +366,6 @@
                                 quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
                             }
                         }
-                    }
-
-                    if (imAmountInput) {
-                        imAmountInput.value = getQuantity(itemElement);
-                        imAmountInput.dispatchEvent(new Event('input', { bubbles: true }));
                     }
 
                     // UPDATE BUTTON VISUALS FOR UNDO
@@ -516,13 +392,13 @@
 
     function getVisibleItems() {
         const activeTab = getActiveTab();
-        const allItemsLists = document.querySelectorAll('ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"], div[class*="itemList___"]');
+        const allItemsLists = document.querySelectorAll('ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"]');
 
         let visibleItems = [];
         for (const list of allItemsLists) {
             const style = window.getComputedStyle(list);
             if (style.display !== 'none') {
-                const items = list.querySelectorAll('li.clearfix:not(.disabled), div[class*="item___GYCYJ"], div[class*="item___khvF6"], div[class*="itemRow___"]');
+                const items = list.querySelectorAll('li.clearfix:not(.disabled), div[class*="item___GYCYJ"], div[class*="item___khvF6"]');
                 visibleItems = visibleItems.concat(Array.from(items).filter(item => !item.className.includes('item___UN3Mg')));
             }
         }
@@ -682,7 +558,8 @@
             let manageHeading = headings.find(h => h.textContent.includes('Manage your Bazaar') || h.textContent.includes('Manage items') || h.textContent.includes('Manage Bazaar'));
 
             if (manageHeading) {
-                if (document.getElementById('quickUpdateAllPricesBtn')) {
+                // Check for the SETTINGS button ID, which exists on both mobile and desktop
+                if (document.getElementById('manageSettingsBtn')) {
                     clearInterval(tryAddButtons);
                     manageButtonsAdded = true;
                     return;
@@ -703,11 +580,25 @@
                 updateAllBtn.setAttribute('title', 'Update all item prices to current market value');
                 updateAllBtn.addEventListener('click', updateAllManagePrices);
 
+                // 2. Settings Button
+                const settingsBtn = document.createElement('button');
+                settingsBtn.id = 'manageSettingsBtn';
+                settingsBtn.textContent = 'Settings';
+                settingsBtn.className = 'qp-btn qp-btn-top';
+                settingsBtn.setAttribute('title', 'Open Quick Pricer settings');
+                settingsBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    showSettingsPanel();
+                });
+
                 // Only add "Update All" button if NOT on mobile
                 if (!isMobile) {
                     buttonContainer.appendChild(updateAllBtn);
-                    manageHeading.appendChild(buttonContainer);
                 }
+
+                buttonContainer.appendChild(settingsBtn);
+
+                manageHeading.appendChild(buttonContainer);
 
                 console.log('[BazaarQuickPricer] Manage page buttons added');
             } else if (attempts >= maxAttempts) {
@@ -731,7 +622,7 @@
         if (processedItems.has(itemElement)) return;
 
         // Find the description container that usually contains the name
-        const descriptionCont = itemElement.querySelector('div[class*="description___"], div.title-wrap, div[class*="itemInfo___"]');
+        const descriptionCont = itemElement.querySelector('div[class*="description___"], div.title-wrap');
         if (!descriptionCont) return;
 
         if (descriptionCont.querySelector('.quick-price-btn')) {
@@ -741,15 +632,16 @@
 
         processedItems.add(itemElement);
 
-        const image = itemElement.querySelector('div.image-wrap img, img[src*="/items/"]');
+        const image = itemElement.querySelector('div.image-wrap img');
         if (!image) return;
         const itemId = getItemIdFromImage(image);
         if (!itemId) return;
 
         const amountDiv = itemElement.querySelector('div.amount-main-wrap');
-        const imPriceInput = itemElement.querySelector('div[class*="priceInputWrapper___"] input');
+        if (!amountDiv) return;
 
-        if (!amountDiv && !imPriceInput) return;
+        const priceInputs = amountDiv.querySelectorAll('div.price div input');
+        if (priceInputs.length === 0) return;
 
         const btnContainer = document.createElement('div');
         btnContainer.className = 'quick-price-btn';
@@ -823,8 +715,8 @@
         const tryAddButtons = setInterval(() => {
             attempts++;
             // Broad search for any header-like element that might contain the text
-            const potentialHeaders = Array.from(document.querySelectorAll('div[class*="titleContainer___"], div[class*="panelHeader___"], div.title-black, div[class*="title___"], div[class*="listingHeader___"]'));
-            const titleSection = potentialHeaders.find(h => h.textContent.includes('Add items to your Bazaar') || h.textContent.includes('Add items') || h.textContent.includes('Add listing') || h.textContent.includes('Add Listing'));
+            const potentialHeaders = Array.from(document.querySelectorAll('div[class*="titleContainer___"], div[class*="panelHeader___"], div.title-black, div[class*="title___"]'));
+            const titleSection = potentialHeaders.find(h => h.textContent.includes('Add items to your Bazaar') || h.textContent.includes('Add items'));
 
             if (titleSection) {
                 if (document.getElementById('quickFillAllBtn')) {
@@ -846,7 +738,17 @@
                 fillAllBtn.setAttribute('title', 'Fill all items in current tab with market prices');
                 fillAllBtn.addEventListener('click', fillAllItems);
 
+                const settingsBtn = document.createElement('button');
+                settingsBtn.id = 'quickPricerSettingsBtn';
+                settingsBtn.textContent = 'Settings';
+                settingsBtn.className = 'qp-btn qp-btn-settings';
+                settingsBtn.setAttribute('title', 'Open Quick Pricer settings');
+                settingsBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    showSettingsPanel();
+                });
                 buttonContainer.appendChild(fillAllBtn);
+                buttonContainer.appendChild(settingsBtn);
                 titleSection.appendChild(buttonContainer);
 
                 console.log('[BazaarQuickPricer] Buttons added');
@@ -858,7 +760,7 @@
     }
 
     function processAllItems() {
-        const items = document.querySelectorAll('ul.items-cont li.clearfix:not(.disabled), div[class*="itemsContainner___"] div[class*="item___"], div[class*="rowItems___"] div[class*="item___"], div[class*="itemRow___"] div[class*="item___"]');
+        const items = document.querySelectorAll('ul.items-cont li.clearfix:not(.disabled), div[class*="itemsContainner___"] div[class*="item___"], div[class*="rowItems___"] div[class*="item___"]');
         console.log('[BazaarQuickPricer] Found', items.length, 'items');
         if (items.length > 0) {
             items.forEach(item => {
@@ -871,10 +773,7 @@
 
     function setupObserver() {
         const bazaarRoot = document.getElementById('bazaarRoot');
-        const marketRoot = document.getElementById('item-market-root');
-        const root = bazaarRoot || marketRoot;
-
-        if (!root) {
+        if (!bazaarRoot) {
             setTimeout(setupObserver, 1000);
             return;
         }
@@ -889,7 +788,7 @@
                 addManagePageButtons();
             }, 300);
         });
-        observer.observe(root, { childList: true, subtree: true });
+        observer.observe(bazaarRoot, { childList: true, subtree: true });
     }
 
     function init() {
@@ -898,8 +797,6 @@
             setTimeout(showApiKeyPrompt, 1000);
             return;
         }
-
-        createFloatingSettingsButton();
 
         setTimeout(() => {
             processAllItems();
