@@ -1,8 +1,12 @@
 # Torn Bazaar Quick Pricer
 Author: `Zedtrooper [3028329]`
-Current Version: `2.8.4`
+Current Version: `2.8.5`
 
 This is a Tampermonkey userscript for the text-based RPG Torn. It streamlines the experience of running a Bazaar by automatically fetching market values via the Torn API. It allows you to price your items competitively with a single click, both when adding new stock and when managing existing listings.
+
+## Main Changes in v2.8.5
+
+ * Fixed Chrome compatibility issues related to Manifest V3 and improved DOM injection timing.
 
 ## Main Changes in v2.8.4
 
