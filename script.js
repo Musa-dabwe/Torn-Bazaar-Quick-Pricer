@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.8.4
+// @version      2.8.5
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -10,7 +10,7 @@
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
 // @connect      api.torn.com
-// @run-at       document-end
+// @run-at       document-idle
 // @homepage     https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer
 // @supportURL   https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer/issues
 // ==/UserScript==
@@ -18,7 +18,7 @@
 (function() {
     'use strict';
 
-    console.log('[BazaarQuickPricer] v2.8.4 Starting (PDA optimized)...');
+    console.log('[BazaarQuickPricer] v2.8.5 Starting (PDA optimized)...');
 
     // Configuration
     const CONFIG = {
@@ -168,7 +168,7 @@
                 </div>
                 <div style="margin-top:15px;padding-top:15px;border-top:1px solid #555;text-align:center;">
                     <small style="color:#999;font-size:12px;">
-                        v2.8.4 | <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" style="color:#2196F3;">GitHub</a>
+                        v2.8.5 | <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" style="color:#2196F3;">GitHub</a>
                     </small>
                 </div>
             </div>
@@ -771,14 +771,8 @@
         }
     }
 
-    function setupObserver() {
-        const bazaarRoot = document.getElementById('bazaarRoot');
-        if (!bazaarRoot) {
-            setTimeout(setupObserver, 1000);
-            return;
-        }
-
-        console.log('[BazaarQuickPricer] Observer starting');
+    function setupObserver(bazaarRoot) {
+        console.log('[BazaarQuickPricer] Content observer starting');
         const observer = new MutationObserver(() => {
             clearTimeout(mutationDebounceTimer);
             mutationDebounceTimer = setTimeout(() => {
@@ -791,26 +785,42 @@
         observer.observe(bazaarRoot, { childList: true, subtree: true });
     }
 
-    function init() {
-        console.log('[BazaarQuickPricer] Init starting');
+    function initScript(bazaarRoot) {
         if (!CONFIG.apiKey || CONFIG.apiKey === 'null') {
-            setTimeout(showApiKeyPrompt, 1000);
+            showApiKeyPrompt();
             return;
         }
 
-        setTimeout(() => {
-            processAllItems();
-            setupObserver();
-            addTopButtons();
-            processManageItems();
-            addManagePageButtons();
-        }, 2000);
+        processAllItems();
+        setupObserver(bazaarRoot);
+        addTopButtons();
+        processManageItems();
+        addManagePageButtons();
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        setTimeout(init, 1000);
+    function init() {
+        console.log('[BazaarQuickPricer] Waiting for Bazaar container...');
+
+        const bodyObserver = new MutationObserver((mutations, observer) => {
+            const bazaarRoot = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
+            if (bazaarRoot) {
+                console.log('[BazaarQuickPricer] Bazaar container detected, initializing...');
+                observer.disconnect();
+                initScript(bazaarRoot);
+            }
+        });
+
+        bodyObserver.observe(document.body, { childList: true, subtree: true });
+
+        // Initial check in case it's already there
+        const bazaarRoot = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
+        if (bazaarRoot) {
+            console.log('[BazaarQuickPricer] Bazaar container found on start');
+            bodyObserver.disconnect();
+            initScript(bazaarRoot);
+        }
     }
+
+    init();
 
 })();
