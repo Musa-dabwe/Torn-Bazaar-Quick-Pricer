@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.8.5
+// @version      2.8.6
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -10,7 +10,7 @@
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
 // @connect      api.torn.com
-// @run-at       document-idle
+// @run-at       document-end
 // @homepage     https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer
 // @supportURL   https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer/issues
 // ==/UserScript==
@@ -18,15 +18,25 @@
 (function() {
     'use strict';
 
-    console.log('[BazaarQuickPricer] v2.8.5 Starting (PDA optimized)...');
+    if (typeof GM_getValue === 'undefined') {
+        console.error('[BazaarQuickPricer] GM_getValue not available! Please check Tampermonkey settings.');
+        return;
+    }
 
-    // Configuration
+    console.log('[BazaarQuickPricer] v2.8.6 Starting (PDA optimized)...');
+
+    // Configuration with Lazy Initialization
     const CONFIG = {
-        defaultDiscount: GM_getValue('discountPercent', 0),
-        apiKey: GM_getValue('tornApiKey', ''),
-        lastPriceUpdate: GM_getValue('lastPriceUpdate', 0),
-        priceCache: GM_getValue('priceCache', {}),
-        disableNpcCheck: GM_getValue('disableNpcCheck', false),
+        get defaultDiscount() { return GM_getValue('discountPercent', 0); },
+        set defaultDiscount(val) { GM_setValue('discountPercent', val); },
+        get apiKey() { return GM_getValue('tornApiKey', ''); },
+        set apiKey(val) { GM_setValue('tornApiKey', val); },
+        get lastPriceUpdate() { return GM_getValue('lastPriceUpdate', 0); },
+        set lastPriceUpdate(val) { GM_setValue('lastPriceUpdate', val); },
+        get priceCache() { return GM_getValue('priceCache', {}); },
+        set priceCache(val) { GM_setValue('priceCache', val); },
+        get disableNpcCheck() { return GM_getValue('disableNpcCheck', false); },
+        set disableNpcCheck(val) { GM_setValue('disableNpcCheck', val); },
         cacheTimeout: 5 * 60 * 1000
     };
 
@@ -34,12 +44,12 @@
     const processedManageItems = new WeakSet();
     let mutationDebounceTimer = null;
 
-    // Inject Theme-Consistent CSS
+    // Inject Theme-Consistent CSS (Removed CSS Variable dependencies for Chrome)
     const style = document.createElement('style');
     style.textContent = `
         .qp-btn {
-            background: var(--default-panel-gradient, #5F5F5F);
-            color: var(--default-gray-9-color, white);
+            background: #5F5F5F !important;
+            color: white !important;
             border: none;
             border-radius: 4px;
             cursor: pointer;
@@ -60,7 +70,7 @@
             cursor: not-allowed;
         }
         .qp-btn-red {
-            background: var(--default-red-color, #E3392C) !important;
+            background: #E3392C !important;
             color: white !important;
         }
         .qp-btn-top {
@@ -92,12 +102,9 @@
     let manageButtonsAdded = false;
 
 
+    // saveConfig is now redundant due to CONFIG setters but kept as no-op for compatibility
     function saveConfig() {
-        GM_setValue('discountPercent', CONFIG.defaultDiscount);
-        GM_setValue('tornApiKey', CONFIG.apiKey);
-        GM_setValue('lastPriceUpdate', CONFIG.lastPriceUpdate);
-        GM_setValue('priceCache', CONFIG.priceCache);
-        GM_setValue('disableNpcCheck', CONFIG.disableNpcCheck);
+        // Redundant
     }
 
     // Custom SVGs
@@ -125,7 +132,6 @@
             const key = document.getElementById('apiKeyInput').value.trim();
             if (key && key.length === 16) {
                 CONFIG.apiKey = key;
-                saveConfig();
                 overlay.remove();
                 location.reload();
             } else {
@@ -168,7 +174,7 @@
                 </div>
                 <div style="margin-top:15px;padding-top:15px;border-top:1px solid #555;text-align:center;">
                     <small style="color:#999;font-size:12px;">
-                        v2.8.5 | <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" style="color:#2196F3;">GitHub</a>
+                        v2.8.6 | <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" style="color:#2196F3;">GitHub</a>
                     </small>
                 </div>
             </div>
@@ -184,14 +190,12 @@
         document.getElementById('clearCache').onclick = () => {
             CONFIG.priceCache = {};
             CONFIG.lastPriceUpdate = 0;
-            saveConfig();
             alert('Cache cleared!');
         };
         document.getElementById('saveSettings').onclick = () => {
             CONFIG.defaultDiscount = parseFloat(document.getElementById('discountInput').value);
             CONFIG.apiKey = document.getElementById('apiKeyUpdateInput').value.trim();
             CONFIG.disableNpcCheck = document.getElementById('npcOverrideCheck').checked;
-            saveConfig();
             overlay.remove();
             alert('Settings saved!');
         };
@@ -244,13 +248,14 @@
                         const marketValue = itemData.market_value || 0;
                         const sellPrice = itemData.sell_price || 0;
 
-                        CONFIG.priceCache[itemId] = {
+                        const cache = CONFIG.priceCache;
+                        cache[itemId] = {
                             marketValue: marketValue,
                             sellPrice: sellPrice,
                             timestamp: Date.now()
                         };
+                        CONFIG.priceCache = cache;
                         CONFIG.lastPriceUpdate = Date.now();
-                        saveConfig();
 
                         callback({ marketValue, sellPrice });
                     } else {
@@ -798,27 +803,82 @@
         addManagePageButtons();
     }
 
-    function init() {
-        console.log('[BazaarQuickPricer] Waiting for Bazaar container...');
+    let isScriptInitialized = false;
 
-        const bodyObserver = new MutationObserver((mutations, observer) => {
-            const bazaarRoot = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-            if (bazaarRoot) {
-                console.log('[BazaarQuickPricer] Bazaar container detected, initializing...');
+    function init() {
+        console.log('[BazaarQuickPricer] Starting multi-stage initialization...');
+
+        // Stage 1: Wait for DOM
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkForBazaar);
+        } else {
+            checkForBazaar();
+        }
+    }
+
+    function checkForBazaar() {
+        if (isScriptInitialized) return;
+
+        const bazaarRoot = document.getElementById('bazaarRoot') ||
+                           document.querySelector('.bazaar-main-wrap');
+
+        if (bazaarRoot) {
+            console.log('[BazaarQuickPricer] Bazaar found immediately');
+            isScriptInitialized = true;
+            initScript(bazaarRoot);
+            return;
+        }
+
+        // Stage 2: MutationObserver
+        const observer = new MutationObserver(() => {
+            if (isScriptInitialized) {
                 observer.disconnect();
-                initScript(bazaarRoot);
+                return;
+            }
+            const root = document.getElementById('bazaarRoot') ||
+                         document.querySelector('.bazaar-main-wrap');
+            if (root) {
+                console.log('[BazaarQuickPricer] Bazaar detected via observer');
+                isScriptInitialized = true;
+                observer.disconnect();
+                initScript(root);
             }
         });
 
-        bodyObserver.observe(document.body, { childList: true, subtree: true });
-
-        // Initial check in case it's already there
-        const bazaarRoot = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-        if (bazaarRoot) {
-            console.log('[BazaarQuickPricer] Bazaar container found on start');
-            bodyObserver.disconnect();
-            initScript(bazaarRoot);
+        if (document.body) {
+            observer.observe(document.body, { childList: true, subtree: true });
+        } else {
+            // Fallback if body doesn't exist yet
+            const docObserver = new MutationObserver(() => {
+                if (document.body) {
+                    docObserver.disconnect();
+                    observer.observe(document.body, { childList: true, subtree: true });
+                }
+            });
+            docObserver.observe(document.documentElement, { childList: true });
         }
+
+        // Stage 3: Polling fallback for Chrome
+        let attempts = 0;
+        const pollInterval = setInterval(() => {
+            if (isScriptInitialized) {
+                clearInterval(pollInterval);
+                return;
+            }
+            attempts++;
+            const root = document.getElementById('bazaarRoot') ||
+                         document.querySelector('.bazaar-main-wrap');
+            if (root) {
+                console.log('[BazaarQuickPricer] Bazaar detected via polling');
+                isScriptInitialized = true;
+                clearInterval(pollInterval);
+                observer.disconnect();
+                initScript(root);
+            } else if (attempts > 50) { // 5 seconds
+                clearInterval(pollInterval);
+                console.warn('[BazaarQuickPricer] Failed to find bazaar container after 5s');
+            }
+        }, 100);
     }
 
     init();

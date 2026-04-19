@@ -1,8 +1,16 @@
 # Torn Bazaar Quick Pricer
 Author: `Zedtrooper [3028329]`
-Current Version: `2.8.5`
+Current Version: `2.8.6`
 
 This is a Tampermonkey userscript for the text-based RPG Torn. It streamlines the experience of running a Bazaar by automatically fetching market values via the Torn API. It allows you to price your items competitively with a single click, both when adding new stock and when managing existing listings.
+
+## Main Changes in v2.8.6
+
+ * Chrome compatibility: Changed script timing from `document-idle` to `document-end`
+ * Chrome compatibility: Added multi-stage initialization with polling fallback
+ * Chrome compatibility: Fixed GM_getValue synchronous initialization issue
+ * Chrome compatibility: Removed CSS variable dependencies for better cross-browser support
+ * Added comprehensive Chrome troubleshooting logging
 
 ## Main Changes in v2.8.5
 
@@ -35,6 +43,23 @@ The script places "Quick Add" (or "Update") buttons next to your items. Clicking
 ## How to Use
 
  * Installation: Install the script and enter your Torn Public API key when prompted on the first run.
+
+## Chrome Installation
+
+If the script doesn't work in Chrome:
+
+1. Install Tampermonkey from Chrome Web Store
+2. Go to Chrome Extensions (`chrome://extensions/`)
+3. Enable "Developer mode" (toggle in top right)
+4. Click on Tampermonkey's "Details"
+5. Enable "Allow access to file URLs"
+6. Reload the Torn bazaar page
+7. Check browser console (F12) for error messages
+
+### Common Chrome Issues
+- **Script doesn't load**: Check that `@run-at` is set to `document-end`
+- **Buttons don't appear**: Clear Tampermonkey storage and reload
+- **API errors**: Verify your Torn API key is saved correctly
 
  * Adding Items: Navigate to the "Add Items" page in your Bazaar.
 
