@@ -1,80 +1,23 @@
-# Torn Bazaar Quick Pricer
-Author: `Zedtrooper [3028329]`
-Current Version: `2.8.6`
+## Torn Bazaar Quick Pricer — v2.8.7 Release Notes
 
-This is a Tampermonkey userscript for the text-based RPG Torn. It streamlines the experience of running a Bazaar by automatically fetching market values via the Torn API. It allows you to price your items competitively with a single click, both when adding new stock and when managing existing listings.
+---
 
-## Main Changes in v2.8.6
+### Settings Panel Redesign
 
- * Chrome compatibility: Changed script timing from `document-idle` to `document-end`
- * Chrome compatibility: Added multi-stage initialization with polling fallback
- * Chrome compatibility: Fixed GM_getValue synchronous initialization issue
- * Chrome compatibility: Removed CSS variable dependencies for better cross-browser support
- * Added comprehensive Chrome troubleshooting logging
+The settings modal has been fully replaced with a classified dossier-styled panel. The new design features a live ticking timestamp, a rotated CONFIDENTIAL stamp, and a subject identity block showing your Torn operator ID. A mugshot area supports uploading a custom profile photo which persists across sessions via Tampermonkey storage. The API key field now has a show/hide eye toggle. Discount and API key are rendered as clean monospace underline inputs. NPC Floor and Skip RW Weapons are toggle switches replacing the previous checkboxes. Footer buttons are labelled AUTHORIZE and ABORT, with CLEAR CACHE as a red bordered stamp. Clicking outside the panel closes it. A subtle flash fires on every button click.
 
-## Main Changes in v2.8.5
+---
 
- * Fixed Chrome compatibility issues related to Manifest V3 and improved DOM injection timing.
+### Ranked War Weapon Detection
 
-## Main Changes in v2.8.4
+Added full ranked war weapon detection covering all 70 known RW bonus names sourced from the Torn Wiki and TornExchange, including all General cache bonuses (Yellow, Orange, Red) and all Unique hardcoded weapon bonuses.
 
- * React Layout Fix: Major update to support Torn's new React-based Bazaar structure. Switched to robust, hash-agnostic selectors to ensure the script continues to work even after site updates.
- * Native Theme Integration: Script buttons and UI elements have been redesigned to use Torn's native CSS variables. This ensures a perfect visual match for both Light Mode and Dark Mode automatically.
- * Improved Element Detection: Enhanced the logic for finding item containers and input fields on both the "Add Items" and "Manage Bazaar" pages.
+Detection reads directly from the `bonus-attachment-{bonusname}` icon class inside `ul.bonuses-wrap li.bonus` — the actual structure Torn uses in the bazaar DOM. Blank slot placeholders and non-bonus icons (damage, accuracy) are explicitly excluded. Rarity colour is read from the `glow-yellow`, `glow-orange`, or `glow-red` class on the item image element.
 
-## Main Changes in v2.8.3
+Detected RW weapons get a small blinking coloured dot to the left of their fill button — gold for Yellow, burnt orange for Orange, red for Red — without displacing the button layout.
 
- * Undo Functionality: The individual "Quick Add" buttons now feature a smart toggle. After automatically filling an item's price and quantity, the button turns Red. Clicking it again will "Undo" the action, clearing both the price and quantity fields instantly.
- * NPC Price Safety Toggle: A new checkbox has been added to the Settings panel: "Disable NPC Safety Limit".
-   * Default (Unchecked): The script prevents you from listing an item for less than you could sell it to a game shop (NPC).
-   * Checked: You can override this safety measure if you wish to apply deep discounts that drop the price below the NPC sell value.
-   * Info Icon: Added a clickable info icon in settings to explain this feature.
- * Mobile Optimizations:
-   * The "Update All" button is now hidden on mobile devices (like Torn PDA) to save screen space, while the Settings button remains accessible.
-   * Fixed a bug that caused buttons to duplicate on the "Manage Bazaar" page.
-Key Features
-The script places "Quick Add" (or "Update") buttons next to your items. Clicking these will fetch the current market value and auto-fill the price and quantity fields.
- * Smart Automation: A "Quick Fill" button allows you to price or update every item in your current tab at once.
- * Reversible Actions: Made a mistake? Individual item buttons now allow you to Undo a fill with a single click.
- * Flexible Protection: Includes optional NPC price floor protection to prevent accidental under-pricing, which can now be toggled off in settings.
- * Efficiency: A smart caching system stores price data for 5 minutes to minimize API calls and speed up usage.
- * Compatibility: Fully optimized for desktop and the Torn PDA mobile interface, with automatic dark and light mode detection.
+**Bulk operations (Quick Fill, Update All)** skip RW weapons by default and report how many were skipped in the completion message.
 
-## How to Use
+**Individual per-item buttons** on RW weapons show a confirmation prompt before pricing, identifying the bonus name and rarity tier, since RW weapons carry unique value not reflected in standard market price.
 
- * Installation: Install the script and enter your Torn Public API key when prompted on the first run.
-
-## Chrome Installation
-
-If the script doesn't work in Chrome:
-
-1. Install Tampermonkey from Chrome Web Store
-2. Go to Chrome Extensions (`chrome://extensions/`)
-3. Enable "Developer mode" (toggle in top right)
-4. Click on Tampermonkey's "Details"
-5. Enable "Allow access to file URLs"
-6. Reload the Torn bazaar page
-7. Check browser console (F12) for error messages
-
-### Common Chrome Issues
-- **Script doesn't load**: Check that `@run-at` is set to `document-end`
-- **Buttons don't appear**: Clear Tampermonkey storage and reload
-- **API errors**: Verify your Torn API key is saved correctly
-
- * Adding Items: Navigate to the "Add Items" page in your Bazaar.
-
-   * Single Item: Click the grey button next to an item to fetch its price. The button will turn Red. Click it again to Undo/Clear that item.
-
-   * Bulk: Use the "Quick Fill" button at the top to price all items in the current category tab.
-
- * Managing Inventory: Navigate to the "Manage Bazaar" page. You can use the same features to update the prices of currently listed items to ensure they remain competitive.
-
- * Customization: Click the "Settings" button to:
-
-   * Adjust your Discount Percentage (positive to undercut, negative to overprice).
-   * Toggle the NPC Safety Limit.
-   * Clear your price cache or update your API key.
-Requirements
-
- * A Torn Public API key (generated in your Torn preferences under the API tab).
- * Tampermonkey or a compatible userscript manager (works natively with Torn PDA on Android).
+Both behaviours are controlled by the new Skip RW Weapons toggle in Settings.
