@@ -1,6 +1,7 @@
 ## Torn Bazaar Quick Pricer — v2.8.7 Release Notes
 
 ---
+[Install Script](https://update.greasyfork.org/scripts/558562/Torn%20Bazaar%20Quick%20Pricer.user.js)
 
 ### Settings Panel Redesign
 
