@@ -1,7 +1,17 @@
+## Torn Bazaar Quick Pricer — v2.8.8 Release Notes
+
+[Install Script](https://update.greasyfork.org/scripts/558562/Torn%20Bazaar%20Quick%20Pricer.user.js)
+
+- **UI Rebuild**: Replaced settings panel and API prompt with a new brutalist design using the Syne font.
+- **PDA API Key Support**: Implemented `###PDA-APIKEY###` injection logic for Torn PDA compatibility.
+- **RW Detection Refinement**: Optimized RW weapon detection to use only glow-class and bonus-icon methods.
+- **Settings Toggle**: Added "Skip RW Weapons" toggle to settings panel.
+
+---
+
 ## Torn Bazaar Quick Pricer — v2.8.7 Release Notes
 
 ---
-[Install Script](https://update.greasyfork.org/scripts/558562/Torn%20Bazaar%20Quick%20Pricer.user.js)
 
 ### Settings Panel Redesign
 
@@ -22,9 +32,3 @@ Detected RW weapons get a small blinking coloured dot to the left of their fill 
 **Individual per-item buttons** on RW weapons show a confirmation prompt before pricing, identifying the bonus name and rarity tier, since RW weapons carry unique value not reflected in standard market price.
 
 Both behaviours are controlled by the new Skip RW Weapons toggle in Settings.
-
-## Torn Bazaar Quick Pricer — v2.8.8 Release Notes
-- **UI Rebuild**: Replaced settings panel and API prompt with a new brutalist design using the Syne font.
-- **PDA API Key Support**: Implemented `###PDA-APIKEY###` injection logic for Torn PDA compatibility.
-- **RW Detection Refinement**: Optimized RW weapon detection to use only glow-class and bonus-icon methods.
-- **Settings Toggle**: Added "Skip RW Weapons" toggle to settings panel.
