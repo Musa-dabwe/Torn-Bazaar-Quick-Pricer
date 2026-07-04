@@ -184,38 +184,72 @@
             50%       { opacity: 0.2; }
         }
 
-        /* ── NEW SETTINGS UI ── */
+        /* ── TERMINAL MONO SETTINGS UI (light only) ── */
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+        .qp-modal {
+            --bg: #f4f4f0;
+            --header-bg: #14140f;
+            --header-text: #c8f5cf;
+            --text: #1a1a1a;
+            --muted: #5a5a5a;
+            --accent: #0a7a3d;
+            --border: #c8c8c0;
+            --field: #ffffff;
+            --danger: #b3271e;
+        }
+
+
         .qp-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.85);
             z-index: 99999;
             display: flex; align-items: center; justify-content: center;
-            font-family: 'Syne', sans-serif;
+            font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+            padding: 20px 15px;
+            box-sizing: border-box;
         }
         .qp-modal {
             width: 100%; max-width: 420px;
-            background: #666666;
-            border: 1px solid #555;
+            background: var(--bg);
+            color: var(--text);
+            border: 1px solid var(--border);
             display: flex; flex-direction: column;
             border-radius: 0 !important;
+            max-height: 100%;
+            overflow-y: auto;
+        }
+        @media (min-width: 900px) {
+            .qp-modal { width: 720px; max-width: 720px; }
         }
         .qp-header {
-            background: #1a1a1a;
-            padding: 16px 18px;
+            background: var(--header-bg);
+            padding: 16px 15px;
             position: relative;
+            display: flex; flex-direction: column; gap: 10px;
         }
         .qp-header h1 {
             margin: 0;
-            color: #fff;
-            font-size: 26px;
-            font-weight: 800;
-            line-height: 1;
+            color: var(--header-text);
+            font-size: 20px;
+            font-weight: 700;
+            line-height: 1.3;
             text-transform: uppercase;
+            letter-spacing: 1px;
         }
-        .qp-header h1 span { display: block; }
+        .qp-header h1:before { content: "$ "; opacity: 0.6; }
+        .qp-header h1 .qp-cursor {
+            display: inline-block;
+            width: 8px; height: 15px;
+            margin-left: 3px;
+            background: var(--header-text);
+            vertical-align: -2px;
+            animation: qpDotBlink 1.2s ease-in-out infinite;
+        }
         .qp-header p {
             margin: 4px 0 0 0;
-            color: #555;
+            color: var(--header-text);
+            opacity: 0.55;
             font-size: 9px;
             font-weight: 400;
             text-transform: uppercase;
@@ -223,38 +257,42 @@
         }
         .qp-gold-rule {
             height: 1px;
-            background: linear-gradient(90deg, #E8C97E, transparent);
-            margin-top: 12px;
+            background: linear-gradient(90deg, var(--accent), transparent);
         }
         .qp-body {
-            padding: 16px 18px;
+            padding: 16px 15px;
             display: flex;
             flex-direction: column;
             gap: 12px;
         }
         .qp-card {
-            background: #595959;
+            background: var(--field);
+            border: 1px solid var(--border);
             padding: 10px 12px;
             display: grid;
-            grid-template-columns: 88px 1fr;
+            grid-template-columns: 96px 1fr;
             align-items: center;
         }
         .qp-card label {
-            color: #E8C97E;
-            font-size: 8px;
-            font-weight: 700;
+            color: var(--accent);
+            font-size: 10px;
+            font-weight: 600;
             text-transform: uppercase;
         }
+        .qp-card label:before { content: "["; opacity: 0.6; }
+        .qp-card label:after { content: "]"; opacity: 0.6; }
         .qp-card input {
             background: transparent;
             border: none;
-            color: #fff;
+            color: var(--text);
             font-size: 14px;
-            font-weight: 700;
-            font-family: 'Syne', sans-serif;
+            font-weight: 500;
+            font-family: 'IBM Plex Mono', monospace;
             outline: none;
             width: 100%;
         }
+        .qp-card input:focus { outline: none; }
+        .qp-card:focus-within { border-color: var(--accent); }
         .qp-input-wrap {
             display: flex;
             align-items: center;
@@ -262,14 +300,15 @@
         }
         .qp-eye-toggle {
             cursor: pointer;
-            color: #888;
+            color: var(--muted);
             display: flex;
             align-items: center;
         }
-        .qp-eye-toggle:hover { color: #fff; }
+        .qp-eye-toggle:hover { color: var(--text); }
 
         .qp-toggles-card {
-            background: #595959;
+            background: var(--field);
+            border: 1px solid var(--border);
             padding: 4px 12px;
             display: flex;
             flex-direction: column;
@@ -280,50 +319,51 @@
             align-items: center;
             padding: 8px 0;
         }
-        .qp-toggle-row:first-child { border-bottom: 1px solid #4a4a4a; }
+        .qp-toggle-row:first-child { border-bottom: 1px solid var(--border); }
         .qp-toggle-row span {
-            color: #fff;
+            color: var(--text);
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 500;
             text-transform: uppercase;
         }
+        .qp-toggle-row span.qp-on { color: var(--accent); }
 
         .qp-toggle {
             position: relative;
             display: inline-block;
-            width: 32px;
-            height: 16px;
+            width: 30px;
+            height: 15px;
         }
         .qp-toggle input { opacity: 0; width: 0; height: 0; }
         .qp-toggle-track {
             position: absolute;
             cursor: pointer;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #3a3a3a;
-            border: 1px solid #2a2a2a;
+            background-color: var(--field);
+            border: 1px solid var(--border);
+            border-radius: 0 !important;
             transition: .2s;
         }
         .qp-toggle-track:before {
             position: absolute;
             content: "";
-            height: 10px;
-            width: 10px;
+            height: 9px;
+            width: 9px;
             left: 2px;
             bottom: 2px;
-            background-color: #6a6a6a;
+            background-color: var(--muted);
             transition: .2s;
         }
         input:checked + .qp-toggle-track {
-            background-color: #3d5c43;
-            border-color: #2d4a33;
+            border-color: var(--accent);
         }
         input:checked + .qp-toggle-track:before {
             transform: translateX(14px);
-            background-color: #b8d4bc;
+            background-color: var(--accent);
         }
 
         .qp-footer {
-            padding: 0 18px 16px;
+            padding: 0 15px 16px;
             display: flex;
             flex-direction: column;
             gap: 16px;
@@ -336,36 +376,40 @@
             flex: 1;
             padding: 10px;
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 600;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
             cursor: pointer;
-            border: 1px solid transparent;
-            font-family: 'Syne', sans-serif;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: 'IBM Plex Mono', monospace;
             border-radius: 0 !important;
         }
+        .qp-buttons button:hover { border-color: var(--accent); }
         .qp-btn-clear {
-            background: transparent !important;
-            border-color: #c0392b !important;
-            color: #c0392b !important;
+            border-color: var(--danger) !important;
+            color: var(--danger) !important;
         }
         .qp-btn-auth {
-            background: #E8C97E !important;
-            color: #1a1a1a !important;
+            background: transparent !important;
+            border-color: var(--accent) !important;
+            color: var(--accent) !important;
+            font-weight: 700;
         }
         .qp-btn-abort {
-            background: transparent !important;
-            border-color: #888 !important;
-            color: #fff !important;
+            border-color: var(--border) !important;
+            color: var(--muted) !important;
         }
         .qp-footer-meta {
             display: flex;
             justify-content: space-between;
             align-items: center;
             font-size: 10px;
-            color: #888;
+            color: var(--muted);
         }
         .qp-github {
-            color: #E8C97E;
+            color: var(--accent);
             text-decoration: none;
         }
 
@@ -422,6 +466,18 @@
     function saveConfig() {} // no-op kept for compat
 
     // =====================================================================
+    // UI HELPERS
+    // =====================================================================
+
+    function wireToggleRowLabel(overlay, checkboxId) {
+        const checkbox = overlay.querySelector('#' + checkboxId);
+        const label = checkbox.closest('.qp-toggle-row').querySelector('span');
+        const sync = () => label.classList.toggle('qp-on', checkbox.checked);
+        sync();
+        checkbox.addEventListener('change', sync);
+    }
+
+    // =====================================================================
     // UI — API KEY PROMPT  (kept minimal / unchanged)
     // =====================================================================
 
@@ -431,7 +487,7 @@
         overlay.innerHTML = `
             <div class="qp-modal">
                 <header class="qp-header">
-                    <h1><span>QUICK</span><span>PRICER</span></h1>
+                    <h1><span>QUICK</span><span>PRICER</span><span class="qp-cursor"></span></h1>
                     <p>API AUTHORIZATION REQUIRED</p>
                     <div class="qp-gold-rule"></div>
                 </header>
@@ -447,7 +503,7 @@
                 <div class="qp-footer">
                     <div class="qp-buttons">
                         <button class="qp-btn-auth" id="qpSave">AUTHORIZE</button>
-                        <button class="qp-btn-abort" id="qpCancel">↩</button>
+                        <button class="qp-btn-abort" id="qpCancel">CLOSE</button>
                     </div>
                 </div>
             </div>
@@ -482,7 +538,7 @@
         overlay.innerHTML = `
             <div class="qp-modal">
                 <header class="qp-header">
-                    <h1><span>QUICK</span><span>PRICER</span></h1>
+                    <h1><span>QUICK</span><span>PRICER</span><span class="qp-cursor"></span></h1>
                     <p>BAZAAR MANAGEMENT SUITE</p>
                     <div class="qp-gold-rule"></div>
                 </header>
@@ -519,7 +575,7 @@
                     <div class="qp-buttons">
                         <button class="qp-btn-clear" id="qpClearCache">CLEAR CACHE</button>
                         <button class="qp-btn-auth" id="qpSave">AUTHORIZE</button>
-                        <button class="qp-btn-abort" id="qpCancel">↩</button>
+                        <button class="qp-btn-abort" id="qpCancel">CLOSE</button>
                     </div>
                     <div class="qp-footer-meta">
                         <span>v2.8.9</span>
@@ -529,6 +585,8 @@
             </div>
         `;
         document.body.appendChild(overlay);
+        wireToggleRowLabel(overlay, 'qpNpcCheck');
+        wireToggleRowLabel(overlay, 'qpRwCheck');
 
         const apiInput = overlay.querySelector('#qpApiKey');
         const eyeToggle = overlay.querySelector('#qpEyeToggle');
@@ -838,8 +896,33 @@
         });
     }
 
+    function findSectionContainer(matchFn) {
+        const headings = Array.from(document.querySelectorAll('div[role="heading"], div[class*="title"], div[class*="panelHeader"], div[class*="titleContainer"]'));
+        const heading = headings.find(matchFn);
+        if (!heading) return null;
+        let node = heading.parentElement;
+        for (let i = 0; i < 5 && node && node !== document.body; i++) {
+            if (node.querySelector('div[class*="item___"]')) return node;
+            node = node.parentElement;
+        }
+        return null;
+    }
+
     function getManageItems() {
-        const manageItemsList = document.querySelectorAll('div[class*="item___"]');
+        // Scoped to the "Manage your Bazaar" section specifically — a plain class-based
+        // selector here also matches rows in the "Add items" section (they share the
+        // same item___ classnames), which was causing the chip to misdetect context and
+        // fire updateAllManagePrices() on the add-items page. If the manage heading
+        // isn't found, treat it as "no manage items" rather than falling back to a
+        // document-wide scan, since a false negative here is harmless but a false
+        // positive breaks the chip.
+        const container = findSectionContainer(h =>
+            h.textContent.includes('Manage your Bazaar') ||
+            h.textContent.includes('Manage items') ||
+            h.textContent.includes('Manage Bazaar')
+        );
+        if (!container) return [];
+        const manageItemsList = container.querySelectorAll('div[class*="item___"]');
         return Array.from(manageItemsList).filter(item => !item.className.includes('item___UN3Mg'));
     }
 
@@ -905,6 +988,10 @@
 
     function createFloatingChip() {
         if (chipEl) return;
+        // Defensive cleanup: if the script gets re-injected (PDA re-injection, SPA route
+        // change) without a full page reload, a previous instance's chip can be orphaned
+        // in the DOM with no reference to clean it up. Sweep those out before making a new one.
+        document.querySelectorAll('.qp-chip').forEach(el => el.remove());
         chipEl = document.createElement('div');
         chipEl.className = 'qp-chip';
         chipEl.innerHTML = `
