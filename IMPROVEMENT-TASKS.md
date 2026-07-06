@@ -26,13 +26,13 @@ Line references point at `script-v2_8_9.js`.
   settings modal falls back to `SFMono-Regular`/`Consolas`. Either move both imports to
   the top of the `<style>` element, or (better — see 2.3) drop remote fonts entirely.
 
-- [ ] **1.3 — Stop interpolating the API key into an HTML string.**
+- [x] **1.3 — Stop interpolating the API key into an HTML string.** *(Done in v2.9: set via `apiInput.value`.)*
   `showSettingsPanel()` builds `value="${CONFIG.apiKey}"` via `innerHTML` (line 549).
   The stored key is not guaranteed to be format-valid (see 1.4), so a value containing
   `"` breaks out of the attribute — an HTML-injection vector into the page. Set the
   value via DOM (`apiInput.value = CONFIG.apiKey`) after inserting the markup instead.
 
-- [ ] **1.4 — Validate the API key everywhere it is saved, with one shared rule.**
+- [x] **1.4 — Validate the API key everywhere it is saved, with one shared rule.** *(Done in v2.9: shared `isValidApiKey()` at all three sites.)*
   Three inconsistent standards exist today:
   - the `CONFIG.apiKey` getter validates `/^[a-zA-Z0-9]{16}$/` (line 46);
   - the first-run prompt only checks `key.length === 16` (line 523);
@@ -53,7 +53,7 @@ Line references point at `script-v2_8_9.js`.
   (line 663) because the queue keeps draining after the key is cleared. On a bad key,
   flush the remaining queue and alert once.
 
-- [ ] **1.7 — Clamp the discount setting.**
+- [x] **1.7 — Clamp the discount setting.** *(Done in v2.9: `clampDiscount()` 0–99.9 on save and in the calculation; input has min/max.)*
   `calculateFinalPrice()` (line 710) accepts any number the user typed into the
   settings panel. A discount over 100 produces a **negative price** written straight
   into Torn's price inputs; a large negative discount produces an absurdly high one.
@@ -136,7 +136,7 @@ Line references point at `script-v2_8_9.js`.
   100 req/min limit; large "Update All" runs will hit code-5 errors. Either raise the
   spacing to ≥ 600 ms, or implement adaptive backoff on error code 5 (pairs with 1.5).
 
-- [ ] **3.6 — Harden `getQuantity()` against false matches.**
+- [x] **3.6 — Harden `getQuantity()` against false matches.** *(Done in v2.9: regex anchored to end of title.)*
   The `/x(\d+)/i` regex over the whole title text (line 639) can match item names that
   legitimately contain `x<digits>`. Anchor the match to the known quantity markup or
   the end of the string (e.g. `/\bx(\d+)\s*$/i`).

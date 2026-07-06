@@ -34,24 +34,35 @@
     // CONFIGURATION
     // =====================================================================
 
+    /** Torn API keys are exactly 16 alphanumeric characters. */
+    function isValidApiKey(k) {
+        return typeof k === 'string' && /^[a-zA-Z0-9]{16}$/.test(k);
+    }
+
+    /** Discounts outside 0–99.9% would produce negative or absurd prices. */
+    function clampDiscount(val) {
+        const n = parseFloat(val);
+        if (!Number.isFinite(n)) return 0;
+        return Math.min(Math.max(n, 0), 99.9);
+    }
+
     const CONFIG = {
         get defaultDiscount() { return GM_getValue('discountPercent', 0); },
         set defaultDiscount(val) { GM_setValue('discountPercent', val); },
         get apiKey() {
             // NOTE: this literal is the ONLY occurrence of the PDA placeholder in the whole
             // file. Torn PDA's script manager does a global find/replace of every occurrence
-            // of "###PDA-APIKEY###" in the source with the real key before running it — so if
-            // this token appears anywhere else (e.g. in a comparison), that comparison gets
-            // rewritten too and silently breaks. Validate by format instead, never by string
-            // equality against the token itself.
+            // of the placeholder token in the source with the real key before running it — so
+            // if the token appears anywhere else (even in a comment or a comparison), that
+            // text gets rewritten too and silently breaks. Validate by format instead, never
+            // by string equality against the token itself.
             const injected = '###PDA-APIKEY###';
             const stored = GM_getValue('tornApiKey', '');
-            const isValidFormat = k => typeof k === 'string' && /^[a-zA-Z0-9]{16}$/.test(k);
-            if (isValidFormat(injected) && injected !== stored) {
+            if (isValidApiKey(injected) && injected !== stored) {
                 GM_setValue('tornApiKey', injected); // persist so it survives even without re-injection
                 return injected;
             }
-            return isValidFormat(stored) ? stored : '';
+            return isValidApiKey(stored) ? stored : '';
         },
         set apiKey(val) { GM_setValue('tornApiKey', val); },
         get priceCache() { return GM_getValue('priceCache', {}); },
@@ -511,12 +522,12 @@
 
         overlay.querySelector('#qpSave').onclick = () => {
             const key = apiInput.value.trim();
-            if (key && key.length === 16) {
+            if (isValidApiKey(key)) {
                 CONFIG.apiKey = key;
                 overlay.remove();
                 location.reload();
             } else {
-                alert('Please enter a valid 16-character API key');
+                alert('Please enter a valid 16-character alphanumeric API key');
             }
         };
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
@@ -537,13 +548,13 @@
                     <div class="qp-card">
                         <label>API KEY</label>
                         <div class="qp-input-wrap">
-                            <input type="password" id="qpApiKey" value="${CONFIG.apiKey}" />
+                            <input type="password" id="qpApiKey" />
                             <div class="qp-eye-toggle" id="qpEyeToggle">${eyeSVG}</div>
                         </div>
                     </div>
                     <div class="qp-card">
                         <label>DISCOUNT %</label>
-                        <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" />
+                        <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" />
                     </div>
                     <div class="qp-toggles-card">
                         <div class="qp-toggle-row">
@@ -580,6 +591,9 @@
         wireToggleRowLabel(overlay, 'qpRwCheck');
 
         const apiInput = overlay.querySelector('#qpApiKey');
+        // Set via DOM, never string-interpolated into HTML: a malformed stored value
+        // containing quotes must not be able to break out of the attribute.
+        apiInput.value = CONFIG.apiKey;
         const eyeToggle = overlay.querySelector('#qpEyeToggle');
         eyeToggle.onclick = () => {
             const isPass = apiInput.type === 'password';
@@ -595,8 +609,13 @@
         };
 
         overlay.querySelector('#qpSave').onclick = () => {
-            CONFIG.defaultDiscount = parseFloat(overlay.querySelector('#qpDiscount').value) || 0;
-            CONFIG.apiKey = apiInput.value.trim();
+            const key = apiInput.value.trim();
+            if (key !== '' && !isValidApiKey(key)) {
+                alert('API key must be 16 alphanumeric characters (leave empty to clear it)');
+                return;
+            }
+            CONFIG.defaultDiscount = clampDiscount(overlay.querySelector('#qpDiscount').value);
+            CONFIG.apiKey = key;
             CONFIG.disableNpcCheck = !overlay.querySelector('#qpNpcCheck').checked;
             CONFIG.skipRwWeapons = overlay.querySelector('#qpRwCheck').checked;
             overlay.remove();
@@ -626,7 +645,9 @@
     function getQuantity(itemElement) {
         const titleWrap = itemElement.querySelector('div[class*="name___"], div.title-wrap');
         if (!titleWrap) return 1;
-        const match = titleWrap.textContent.match(/x(\d+)/i);
+        // Anchored to the end of the title so item names containing "x<digits>"
+        // (e.g. weapon model numbers) can't be misread as a quantity.
+        const match = titleWrap.textContent.trim().match(/\bx(\d+)\s*$/i);
         return match ? parseInt(match[1], 10) : 1;
     }
 
@@ -696,7 +717,7 @@
     // =====================================================================
 
     function calculateFinalPrice(marketValue, sellPrice, discount) {
-        let finalPrice = Math.round(marketValue * (1 - discount / 100));
+        let finalPrice = Math.round(marketValue * (1 - clampDiscount(discount) / 100));
         if (!CONFIG.disableNpcCheck && sellPrice > 0 && finalPrice < sellPrice) {
             console.log(`[BazaarQuickPricer] Price ${finalPrice} below NPC sell price ${sellPrice}, adjusting...`);
             finalPrice = sellPrice;
