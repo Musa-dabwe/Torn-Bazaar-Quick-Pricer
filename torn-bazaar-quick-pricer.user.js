@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.8.9
+// @version      2.9
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -11,6 +11,7 @@
 // @grant        GM_xmlhttpRequest
 // @connect      api.torn.com
 // @run-at       document-end
+// @noframes
 // @homepage     https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer
 // @supportURL   https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer/issues
 // @downloadURL https://update.greasyfork.org/scripts/558562/Torn%20Bazaar%20Quick%20Pricer.user.js
@@ -25,44 +26,157 @@
         return;
     }
 
-    console.log('[BazaarQuickPricer] v2.8.9 Starting (PDA optimized)...');
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9';
+
+    console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
     // =====================================================================
     // CONFIGURATION
     // =====================================================================
 
+    /** Torn API keys are exactly 16 alphanumeric characters. */
+    function isValidApiKey(k) {
+        return typeof k === 'string' && /^[a-zA-Z0-9]{16}$/.test(k);
+    }
+
+    /** Discounts outside 0–99.9% would produce negative or absurd prices. */
+    function clampDiscount(val) {
+        const n = parseFloat(val);
+        if (!Number.isFinite(n)) return 0;
+        return Math.min(Math.max(n, 0), 99.9);
+    }
+
+    // In-memory settings cache: storage is hit once per key, then reads stay in
+    // memory (hot paths read settings once per item) and writes go through to
+    // GM_setValue immediately.
+    const settingsCache = {};
+    function getSetting(name, def) {
+        if (!(name in settingsCache)) settingsCache[name] = GM_getValue(name, def);
+        return settingsCache[name];
+    }
+    function setSetting(name, val) {
+        settingsCache[name] = val;
+        GM_setValue(name, val);
+    }
+
+    // Torn PDA key injection — runs once at startup, before any settings read.
+    // NOTE: this literal is the ONLY occurrence of the PDA placeholder in the whole
+    // file. Torn PDA's script manager does a global find/replace of every occurrence
+    // of the placeholder token in the source with the real key before running it — so
+    // if the token appears anywhere else (even in a comment or a comparison), that
+    // text gets rewritten too and silently breaks. Validate by format instead, never
+    // by string equality against the token itself.
+    (function persistInjectedPdaKey() {
+        const injected = '###PDA-APIKEY###';
+        if (isValidApiKey(injected) && injected !== GM_getValue('tornApiKey', '')) {
+            GM_setValue('tornApiKey', injected); // persist so it survives even without re-injection
+        }
+    })();
+
     const CONFIG = {
-        get defaultDiscount() { return GM_getValue('discountPercent', 0); },
-        set defaultDiscount(val) { GM_setValue('discountPercent', val); },
+        get defaultDiscount() { return getSetting('discountPercent', 0); },
+        set defaultDiscount(val) { setSetting('discountPercent', val); },
         get apiKey() {
-            // NOTE: this literal is the ONLY occurrence of the PDA placeholder in the whole
-            // file. Torn PDA's script manager does a global find/replace of every occurrence
-            // of "###PDA-APIKEY###" in the source with the real key before running it — so if
-            // this token appears anywhere else (e.g. in a comparison), that comparison gets
-            // rewritten too and silently breaks. Validate by format instead, never by string
-            // equality against the token itself.
-            const injected = '###PDA-APIKEY###';
-            const stored = GM_getValue('tornApiKey', '');
-            const isValidFormat = k => typeof k === 'string' && /^[a-zA-Z0-9]{16}$/.test(k);
-            if (isValidFormat(injected) && injected !== stored) {
-                GM_setValue('tornApiKey', injected); // persist so it survives even without re-injection
-                return injected;
-            }
-            return isValidFormat(stored) ? stored : '';
+            const k = getSetting('tornApiKey', '');
+            return isValidApiKey(k) ? k : '';
         },
-        set apiKey(val) { GM_setValue('tornApiKey', val); },
-        get lastPriceUpdate() { return GM_getValue('lastPriceUpdate', 0); },
-        set lastPriceUpdate(val) { GM_setValue('lastPriceUpdate', val); },
-        get priceCache() { return GM_getValue('priceCache', {}); },
-        set priceCache(val) { GM_setValue('priceCache', val); },
-        get disableNpcCheck() { return GM_getValue('disableNpcCheck', false); },
-        set disableNpcCheck(val) { GM_setValue('disableNpcCheck', val); },
-        get skipRwWeapons() { return GM_getValue('skipRwWeapons', true); },
-        set skipRwWeapons(val) { GM_setValue('skipRwWeapons', val); },
-        get profilePhoto() { return GM_getValue('profilePhoto', ''); },
-        set profilePhoto(val) { GM_setValue('profilePhoto', val); },
-        cacheTimeout: 5 * 60 * 1000
+        set apiKey(val) { setSetting('tornApiKey', val); },
+        get disableNpcCheck() { return getSetting('disableNpcCheck', false); },
+        set disableNpcCheck(val) { setSetting('disableNpcCheck', val); },
+        get skipRwWeapons() { return getSetting('skipRwWeapons', true); },
+        set skipRwWeapons(val) { setSetting('skipRwWeapons', val); },
+        get cacheTimeoutMin() { return getSetting('cacheTimeoutMin', 5); },
+        set cacheTimeoutMin(val) { setSetting('cacheTimeoutMin', val); },
+        get cacheTimeout() { return Math.max(1, this.cacheTimeoutMin) * 60 * 1000; }
     };
+
+    // =====================================================================
+    // PRICE CACHE  (in-memory copy of the persisted cache; stale entries are
+    // pruned at startup and writes are debounced into a single GM_setValue so
+    // batch runs don't re-serialize the whole object once per item)
+    // =====================================================================
+
+    let priceCache = GM_getValue('priceCache', {});
+    let priceCachePersistTimer = null;
+
+    (function pruneStalePrices() {
+        const now = Date.now();
+        let dirty = false;
+        for (const id of Object.keys(priceCache)) {
+            const entry = priceCache[id];
+            if (!entry || !entry.timestamp || now - entry.timestamp >= CONFIG.cacheTimeout) {
+                delete priceCache[id];
+                dirty = true;
+            }
+        }
+        if (dirty) GM_setValue('priceCache', priceCache);
+    })();
+
+    function cachePrice(itemId, marketValue, sellPrice) {
+        priceCache[itemId] = { marketValue, sellPrice, timestamp: Date.now() };
+        clearTimeout(priceCachePersistTimer);
+        priceCachePersistTimer = setTimeout(() => GM_setValue('priceCache', priceCache), 500);
+    }
+
+    function getCachedPrice(itemId) {
+        const entry = priceCache[itemId];
+        if (entry && entry.timestamp && Date.now() - entry.timestamp < CONFIG.cacheTimeout) return entry;
+        return null;
+    }
+
+    function clearPriceCache() {
+        priceCache = {};
+        clearTimeout(priceCachePersistTimer);
+        GM_setValue('priceCache', priceCache);
+    }
+
+    // =====================================================================
+    // DEBUG LOGGING  (set the "debug" flag in script storage to enable)
+    // =====================================================================
+
+    const DEBUG = getSetting('debug', false);
+    function log(...args) {
+        if (DEBUG) console.log('[BazaarQuickPricer]', ...args);
+    }
+
+    // =====================================================================
+    // TORN DOM SELECTORS  (single source of truth: Torn's CSS-module class
+    // hashes change on front-end rebuilds, so every fragile selector lives
+    // here and a breakage is a one-spot fix)
+    // =====================================================================
+
+    const SELECTORS = {
+        bazaarRoot: '#bazaarRoot',
+        bazaarRootLegacy: '.bazaar-main-wrap',
+        // Add-items page
+        itemLists: 'ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"]',
+        addItems: 'li.clearfix:not(.disabled), div[class*="item___GYCYJ"], div[class*="item___khvF6"]',
+        allAddItems: 'ul.items-cont li.clearfix:not(.disabled), div[class*="itemsContainner___"] div[class*="item___"], div[class*="rowItems___"] div[class*="item___"]',
+        tabItemClass: 'item___UN3Mg', // tab entries share the item___ prefix; excluded everywhere
+        itemTitle: 'div[class*="name___"], div.title-wrap',
+        itemDescription: 'div[class*="description___"], div.title-wrap',
+        itemImage: 'div.image-wrap img',
+        amountWrap: 'div[class*="amount___"], div.amount-main-wrap',
+        priceWrap: 'div[class*="price___"], div.price',
+        priceInputs: 'div.price div input',
+        quantityCheckbox: 'div.choice-container, [class*="choiceContainer___"]',
+        // Manage page
+        manageItems: 'div[class*="item___"]',
+        managePriceWrap: 'div[class*="price"]',
+        managePriceInput: 'input.input-money, input',
+        sectionHeadings: 'div[role="heading"], div[class*="title"], div[class*="panelHeader"], div[class*="titleContainer"]',
+        // RW detection
+        rwBonusIcons: 'ul.bonuses-wrap li.bonus i[class^="bonus-attachment-"]',
+        rarityGlow: 'div.title-wrap div.image-wrap[class*="glow-"]'
+    };
+
+    const warnedSelectors = new Set();
+    /** Warn once per selector when an expected element is missing (Torn markup change). */
+    function warnSelectorMiss(name) {
+        if (warnedSelectors.has(name)) return;
+        warnedSelectors.add(name);
+        console.warn(`[BazaarQuickPricer] Selector "${name}" matched nothing — Torn's markup may have changed`);
+    }
 
     // =====================================================================
     // RW WEAPON DETECTION
@@ -83,14 +197,14 @@
         'smash', 'spray', 'storage', 'toxin'
     ]);
 
-    const RW_RARITY_KEYWORDS = ['yellow', 'orange', 'red', 'superior', 'epic', 'legendary'];
-
+    /**
+     * Detect whether an item row is a ranked-war weapon.
+     * Torn renders RW bonuses as <i class="bonus-attachment-{name}"> inside
+     * <li class="bonus left"> inside <ul class="bonuses-wrap">.
+     * @returns {{isRanked: boolean, bonus: ?string, rarity: ?string}}
+     */
     function getRWBonusInfo(itemElement) {
-        // Torn renders RW bonuses as <i class="bonus-attachment-{name}">
-        // inside <li class="bonus left"> inside <ul class="bonuses-wrap">.
-        const bonusIcons = itemElement.querySelectorAll(
-            'ul.bonuses-wrap li.bonus i[class^="bonus-attachment-"]'
-        );
+        const bonusIcons = itemElement.querySelectorAll(SELECTORS.rwBonusIcons);
         for (const icon of bonusIcons) {
             const cls = icon.className || '';
             if (cls.includes('blank-bonus')) continue;
@@ -99,17 +213,16 @@
             const bonusName = match[1].toLowerCase();
             if (RW_BONUS_NAMES.has(bonusName)) {
                 const rarity = detectRarity(itemElement);
-                console.log(`[BazaarQuickPricer] RW detected: ${bonusName} (${rarity || 'unknown'})`);
+                log(`RW detected: ${bonusName} (${rarity || 'unknown'})`);
                 return { isRanked: true, bonus: bonusName, rarity };
             }
         }
         return { isRanked: false, bonus: null, rarity: null };
     }
 
+    /** Rarity is encoded as glow-yellow / glow-orange / glow-red on the image wrap. */
     function detectRarity(itemElement) {
-        // Rarity is encoded as glow-yellow / glow-orange / glow-red
-        // on the image-wrap div inside div.title-wrap.
-        const glowEl = itemElement.querySelector('div.title-wrap div.image-wrap[class*="glow-"]');
+        const glowEl = itemElement.querySelector(SELECTORS.rarityGlow);
         if (!glowEl) return null;
         const cls = glowEl.className;
         if (cls.includes('glow-yellow')) return 'yellow';
@@ -124,6 +237,14 @@
         return `${rarity} ${bonus} RW weapon`;
     }
 
+    /** Shared "price an RW weapon anyway?" dialog. @returns {Promise<boolean>} */
+    function confirmRwPricing(rwInfo) {
+        return qpConfirm(
+            `This appears to be a ${rwSkipLabel(rwInfo)}.\nRW weapons have unique pricing not based on standard market value.\n\nPrice it anyway using the base item's market value?`,
+            { title: 'RW WEAPON DETECTED', confirmText: 'PRICE IT' }
+        );
+    }
+
     // =====================================================================
     // STATE
     // =====================================================================
@@ -135,10 +256,15 @@
     // =====================================================================
     // GLOBAL CSS  (button system + badges)
     // =====================================================================
-    const style = document.createElement('style');
-    style.textContent = `
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&display=swap');
 
+    // Best-effort cleanup of a previous instance (PDA re-injection / SPA nav
+    // without a full reload): sweep any UI the old instance left in the DOM.
+    ['#qp-style', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
+        document.querySelectorAll(sel).forEach(el => el.remove()));
+
+    const style = document.createElement('style');
+    style.id = 'qp-style';
+    style.textContent = `
         .qp-btn {
             background: #5F5F5F !important;
             color: white !important;
@@ -152,15 +278,12 @@
             padding: 5px;
             font-size: 13px;
             font-weight: 700;
-            font-family: 'Syne', sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         }
         .qp-btn:hover { filter: brightness(0.8); }
         .qp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .qp-btn-red { background: #E3392C !important; color: white !important; border-radius: 0 !important; }
-        .qp-btn-top { padding: 5px 11px; margin-left: 5px; }
+        .qp-btn-red { background: #E3392C !important; color: white !important; }
         .qp-btn-update { padding: 5px; }
-        .qp-btn-settings { border-radius: 0 !important; }
-        .qp-btn-fill { border-radius: 0 !important; border-right: 1px solid rgba(0,0,0,0.1); }
 
         .quick-price-btn, .quick-update-price-btn {
             display: flex; align-items: center; flex-shrink: 0;
@@ -185,8 +308,15 @@
         }
 
         /* ── TERMINAL MONO SETTINGS UI (light only) ── */
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-
+        .qp-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            z-index: 99999;
+            display: flex; align-items: center; justify-content: center;
+            font-family: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            padding: 20px 15px;
+            box-sizing: border-box;
+        }
         .qp-modal {
             --bg: #f4f4f0;
             --header-bg: #14140f;
@@ -197,19 +327,6 @@
             --border: #c8c8c0;
             --field: #ffffff;
             --danger: #b3271e;
-        }
-
-
-        .qp-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
-            z-index: 99999;
-            display: flex; align-items: center; justify-content: center;
-            font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
-            padding: 20px 15px;
-            box-sizing: border-box;
-        }
-        .qp-modal {
             width: 100%; max-width: 420px;
             background: var(--bg);
             color: var(--text);
@@ -287,11 +404,10 @@
             color: var(--text);
             font-size: 14px;
             font-weight: 500;
-            font-family: 'IBM Plex Mono', monospace;
+            font-family: inherit;
             outline: none;
             width: 100%;
         }
-        .qp-card input:focus { outline: none; }
         .qp-card:focus-within { border-color: var(--accent); }
         .qp-input-wrap {
             display: flex;
@@ -383,7 +499,7 @@
             background: transparent;
             border: 1px solid var(--border);
             color: var(--text);
-            font-family: 'IBM Plex Mono', monospace;
+            font-family: inherit;
             border-radius: 0 !important;
         }
         .qp-buttons button:hover { border-color: var(--accent); }
@@ -425,7 +541,7 @@
             padding: 5px;
             z-index: 99998;
             box-shadow: 0 6px 18px rgba(0,0,0,0.45);
-            font-family: 'Syne', sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
             touch-action: none;
         }
         .qp-chip.qp-chip-dragging { opacity: 0.85; box-shadow: 0 10px 26px rgba(0,0,0,0.6); }
@@ -446,6 +562,35 @@
             width: 34px; height: 34px; padding: 0 !important;
             display: flex; align-items: center; justify-content: center;
         }
+
+        /* ── TOASTS + CONFIRM DIALOG ── */
+        .qp-toast-wrap {
+            position: fixed;
+            bottom: 70px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 100000;
+            display: flex; flex-direction: column; gap: 6px; align-items: center;
+            pointer-events: none;
+        }
+        .qp-toast {
+            background: #14140f;
+            color: #c8f5cf;
+            border: 1px solid #545454;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-family: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            max-width: 90vw;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+        }
+        .qp-toast-error { color: #ffb3ad; border-color: #b3271e; }
+        .qp-toast-success { border-color: #0a7a3d; }
+        .qp-confirm-text {
+            margin: 0;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-line;
+            color: var(--text);
+        }
     `;
     document.head.appendChild(style);
 
@@ -461,10 +606,6 @@
 
     const gearSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19.14,12.94c.04-.3,.06-.61,.06-.94s-.02-.64-.06-.94l2.03-1.58c.18-.14,.23-.41,.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39,.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24,0-.43,.17-.47,.41l-.36,2.54c-.59,.24-1.13,.57-1.62,.94l-2.39-.96c-.22-.08-.47,0-.59,.22l-1.92,3.32c-.12,.21-.08,.47,.12,.61l2.03,1.58c-.04,.3-.06,.62-.06,.94s.02,.64,.06,.94l-2.03,1.58c-.18,.14-.23,.41-.12,.61l1.92,3.32c.12,.22,.37,.29,.59,.22l2.39-.96c.5,.38,1.03,.7,1.62,.94l.36,2.54c.05,.24,.24,.41,.48,.41h3.84c.24,0,.44-.17,.47-.41l.36-2.54c.59-.24,1.13-.56,1.62-.94l2.39,.96c.22,.08,.47,0,.59-.22l1.92-3.32c.12-.22,.07-.47-.12-.61l-2.02-1.58Zm-7.14,2.44c-1.86,0-3.38-1.52-3.38-3.38s1.52-3.38,3.38-3.38,3.38,1.52,3.38,3.38-1.52,3.38-3.38,3.38Z"/></svg>`;
 
-    const isMobile = window.innerWidth <= 784;
-
-    function saveConfig() {} // no-op kept for compat
-
     // =====================================================================
     // UI HELPERS
     // =====================================================================
@@ -477,8 +618,90 @@
         checkbox.addEventListener('change', sync);
     }
 
+    /** Show/hide toggle for the API key input (click or Enter/Space). */
+    function wireEyeToggle(overlay, apiInput) {
+        const eyeToggle = overlay.querySelector('#qpEyeToggle');
+        const flip = () => {
+            const isPass = apiInput.type === 'password';
+            apiInput.type = isPass ? 'text' : 'password';
+            eyeToggle.innerHTML = isPass ? eyeOffSVG : eyeSVG;
+        };
+        eyeToggle.addEventListener('click', flip);
+        eyeToggle.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
+        });
+    }
+
+    /** Dialog accessibility: role/aria attributes, Escape to close, Tab focus trap. */
+    function wireOverlayA11y(overlay, onClose) {
+        const modal = overlay.querySelector('.qp-modal');
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        overlay.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
+            if (e.key !== 'Tab') return;
+            const focusables = overlay.querySelectorAll('button, input, a[href], [tabindex]:not([tabindex="-1"])');
+            if (focusables.length === 0) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        });
+    }
+
+    let toastWrap = null;
+
+    /** Non-blocking notification. @param {'info'|'success'|'error'} kind */
+    function qpToast(message, kind = 'info', duration = 4000) {
+        if (!toastWrap || !document.body.contains(toastWrap)) {
+            toastWrap = document.createElement('div');
+            toastWrap.className = 'qp-toast-wrap';
+            document.body.appendChild(toastWrap);
+        }
+        const toast = document.createElement('div');
+        toast.className = `qp-toast qp-toast-${kind}`;
+        toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        toast.textContent = message;
+        toastWrap.appendChild(toast);
+        setTimeout(() => toast.remove(), duration);
+    }
+
+    /**
+     * Non-blocking replacement for window.confirm, styled like the settings modal.
+     * @returns {Promise<boolean>} true if the user confirmed
+     */
+    function qpConfirm(message, opts = {}) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'qp-overlay';
+            overlay.innerHTML = `
+                <div class="qp-modal">
+                    <header class="qp-header">
+                        <h1>${opts.title || 'CONFIRM'}<span class="qp-cursor"></span></h1>
+                        <div class="qp-gold-rule"></div>
+                    </header>
+                    <div class="qp-body"><p class="qp-confirm-text"></p></div>
+                    <div class="qp-footer">
+                        <div class="qp-buttons">
+                            <button class="qp-btn-auth" data-qp="ok">${opts.confirmText || 'CONFIRM'}</button>
+                            <button class="qp-btn-abort" data-qp="cancel">CANCEL</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            overlay.querySelector('.qp-confirm-text').textContent = message;
+            document.body.appendChild(overlay);
+            const done = (val) => { overlay.remove(); resolve(val); };
+            overlay.querySelector('[data-qp="ok"]').onclick = () => done(true);
+            overlay.querySelector('[data-qp="cancel"]').onclick = () => done(false);
+            overlay.onclick = (e) => { if (e.target === overlay) done(false); };
+            wireOverlayA11y(overlay, () => done(false));
+            overlay.querySelector('[data-qp="ok"]').focus();
+        });
+    }
+
     // =====================================================================
-    // UI — API KEY PROMPT  (kept minimal / unchanged)
+    // UI — API KEY PROMPT
     // =====================================================================
 
     function showApiKeyPrompt() {
@@ -495,8 +718,8 @@
                     <div class="qp-card">
                         <label>API KEY</label>
                         <div class="qp-input-wrap">
-                            <input type="password" id="qpApiKey" placeholder="ENTER KEY" />
-                            <div class="qp-eye-toggle" id="qpEyeToggle">${eyeSVG}</div>
+                            <input type="password" id="qpApiKey" placeholder="ENTER KEY" aria-label="Torn API key" />
+                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
                 </div>
@@ -511,25 +734,24 @@
         document.body.appendChild(overlay);
 
         const apiInput = overlay.querySelector('#qpApiKey');
-        const eyeToggle = overlay.querySelector('#qpEyeToggle');
-        eyeToggle.onclick = () => {
-            const isPass = apiInput.type === 'password';
-            apiInput.type = isPass ? 'text' : 'password';
-            eyeToggle.innerHTML = isPass ? eyeOffSVG : eyeSVG;
-        };
+        wireEyeToggle(overlay, apiInput);
 
         overlay.querySelector('#qpSave').onclick = () => {
             const key = apiInput.value.trim();
-            if (key && key.length === 16) {
+            if (isValidApiKey(key)) {
                 CONFIG.apiKey = key;
                 overlay.remove();
-                location.reload();
+                // No reload needed: the chip, observer, and item buttons are already
+                // wired up; the queue simply starts working once a key exists.
+                qpToast('API key saved', 'success');
             } else {
-                alert('Please enter a valid 16-character API key');
+                qpToast('Please enter a valid 16-character alphanumeric API key', 'error');
             }
         };
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        wireOverlayA11y(overlay, () => overlay.remove());
+        apiInput.focus();
     }
 
     function showSettingsPanel() {
@@ -546,13 +768,17 @@
                     <div class="qp-card">
                         <label>API KEY</label>
                         <div class="qp-input-wrap">
-                            <input type="password" id="qpApiKey" value="${CONFIG.apiKey}" />
-                            <div class="qp-eye-toggle" id="qpEyeToggle">${eyeSVG}</div>
+                            <input type="password" id="qpApiKey" aria-label="Torn API key" />
+                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
                     <div class="qp-card">
                         <label>DISCOUNT %</label>
-                        <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" />
+                        <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" aria-label="Discount percent" />
+                    </div>
+                    <div class="qp-card">
+                        <label>CACHE (MIN)</label>
+                        <input type="number" id="qpCacheMin" value="${CONFIG.cacheTimeoutMin}" step="1" min="1" max="120" aria-label="Price cache lifetime in minutes" />
                     </div>
                     <div class="qp-toggles-card">
                         <div class="qp-toggle-row">
@@ -578,7 +804,7 @@
                         <button class="qp-btn-abort" id="qpCancel">CLOSE</button>
                     </div>
                     <div class="qp-footer-meta">
-                        <span>v2.8.9</span>
+                        <span>v${VERSION}</span>
                         <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" class="qp-github">GitHub</a>
                     </div>
                 </div>
@@ -589,31 +815,37 @@
         wireToggleRowLabel(overlay, 'qpRwCheck');
 
         const apiInput = overlay.querySelector('#qpApiKey');
-        const eyeToggle = overlay.querySelector('#qpEyeToggle');
-        eyeToggle.onclick = () => {
-            const isPass = apiInput.type === 'password';
-            apiInput.type = isPass ? 'text' : 'password';
-            eyeToggle.innerHTML = isPass ? eyeOffSVG : eyeSVG;
-        };
+        // Set via DOM, never string-interpolated into HTML: a malformed stored value
+        // containing quotes must not be able to break out of the attribute.
+        apiInput.value = CONFIG.apiKey;
+        wireEyeToggle(overlay, apiInput);
 
         overlay.querySelector('#qpClearCache').onclick = () => {
-            CONFIG.priceCache = {};
-            CONFIG.lastPriceUpdate = 0;
+            clearPriceCache();
             const btn = overlay.querySelector('#qpClearCache');
             btn.textContent = 'CLEARED';
             setTimeout(() => { btn.textContent = 'CLEAR CACHE'; }, 1500);
         };
 
         overlay.querySelector('#qpSave').onclick = () => {
-            CONFIG.defaultDiscount = parseFloat(overlay.querySelector('#qpDiscount').value) || 0;
-            CONFIG.apiKey = apiInput.value.trim();
+            const key = apiInput.value.trim();
+            if (key !== '' && !isValidApiKey(key)) {
+                qpToast('API key must be 16 alphanumeric characters (leave empty to clear it)', 'error');
+                return;
+            }
+            CONFIG.defaultDiscount = clampDiscount(overlay.querySelector('#qpDiscount').value);
+            CONFIG.apiKey = key;
             CONFIG.disableNpcCheck = !overlay.querySelector('#qpNpcCheck').checked;
             CONFIG.skipRwWeapons = overlay.querySelector('#qpRwCheck').checked;
+            CONFIG.cacheTimeoutMin = Math.min(Math.max(parseInt(overlay.querySelector('#qpCacheMin').value, 10) || 5, 1), 120);
             overlay.remove();
+            qpToast('Settings saved', 'success');
         };
 
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        wireOverlayA11y(overlay, () => overlay.remove());
+        apiInput.focus();
     }
 
     // =====================================================================
@@ -621,6 +853,7 @@
     // =====================================================================
 
     const itemIdCache = new Map();
+    /** Torn item images live under /images/items/{itemId}/ — extract the id. */
     function getItemIdFromImage(image) {
         const src = image.src;
         if (itemIdCache.has(src)) return itemIdCache.get(src);
@@ -634,9 +867,11 @@
     }
 
     function getQuantity(itemElement) {
-        const titleWrap = itemElement.querySelector('div[class*="name___"], div.title-wrap');
+        const titleWrap = itemElement.querySelector(SELECTORS.itemTitle);
         if (!titleWrap) return 1;
-        const match = titleWrap.textContent.match(/x(\d+)/i);
+        // Anchored to the end of the title so item names containing "x<digits>"
+        // (e.g. weapon model numbers) can't be misread as a quantity.
+        const match = titleWrap.textContent.trim().match(/\bx(\d+)\s*$/i);
         return match ? parseInt(match[1], 10) : 1;
     }
 
@@ -644,62 +879,127 @@
     // API REQUEST QUEUE
     // =====================================================================
 
-    const requestQueue = [];
+    const requestQueue = [];            // { itemId, retries } waiting to be fetched
+    const pendingRequests = new Map();  // itemId -> callback[] (queued or in flight)
     let isProcessingQueue = false;
+    let queueHalted = false;            // set when a fatal API error stops the run
+
+    const REQUEST_SPACING_MS = 600;         // ≤100 req/min, Torn's documented limit
+    const REQUEST_TIMEOUT_MS = 15000;
+    const RATE_LIMIT_RETRY_DELAY_MS = 5000;
+    const RATE_LIMIT_MAX_RETRIES = 2;
+
+    // Torn API error codes that make every further request pointless this run.
+    const FATAL_API_ERRORS = {
+        2: 'Incorrect API key — please re-enter it in Settings.',
+        8: 'Your IP is temporarily blocked by the Torn API.',
+        9: 'The Torn API is currently disabled.'
+    };
+
+    function notifyApiError(message) {
+        qpToast(message, 'error', 6000);
+    }
+
+    function finishRequest(itemId, result) {
+        const callbacks = pendingRequests.get(itemId) || [];
+        pendingRequests.delete(itemId);
+        callbacks.forEach(cb => cb(result));
+    }
+
+    function failAllPending() {
+        requestQueue.length = 0;
+        const ids = Array.from(pendingRequests.keys());
+        ids.forEach(id => finishRequest(id, { marketValue: 0, sellPrice: 0 }));
+        isProcessingQueue = false;
+    }
 
     function processRequestQueue() {
         if (isProcessingQueue || requestQueue.length === 0) return;
+        if (queueHalted) { failAllPending(); return; }
         isProcessingQueue = true;
-        const { itemId, callback } = requestQueue.shift();
+        const { itemId, retries } = requestQueue.shift();
+
+        const releaseAndContinue = (delay) => {
+            isProcessingQueue = false;
+            setTimeout(processRequestQueue, delay);
+        };
+        const failItem = () => {
+            finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
+            releaseAndContinue(REQUEST_SPACING_MS);
+        };
 
         GM_xmlhttpRequest({
             method: 'GET',
             url: `https://api.torn.com/torn/${itemId}?selections=items&key=${CONFIG.apiKey}`,
+            timeout: REQUEST_TIMEOUT_MS,
             onload: function(response) {
                 try {
                     const data = JSON.parse(response.responseText);
                     if (data.error) {
-                        if (data.error.code === 2) {
-                            alert('Incorrect API Key!');
-                            CONFIG.apiKey = '';
-                            saveConfig();
+                        const code = data.error.code;
+                        if (FATAL_API_ERRORS[code]) {
+                            if (code === 2) CONFIG.apiKey = '';
+                            queueHalted = true;
+                            notifyApiError(FATAL_API_ERRORS[code]);
+                            finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
+                            failAllPending();
+                            return;
                         }
-                        callback({ marketValue: 0, sellPrice: 0 });
+                        if (code === 5 && retries < RATE_LIMIT_MAX_RETRIES) {
+                            console.warn('[BazaarQuickPricer] Rate limited, backing off...');
+                            requestQueue.unshift({ itemId, retries: retries + 1 });
+                            releaseAndContinue(RATE_LIMIT_RETRY_DELAY_MS);
+                            return;
+                        }
+                        console.warn(`[BazaarQuickPricer] API error ${code}: ${data.error.error}`);
+                        failItem();
                     } else if (data.items?.[itemId]) {
                         const itemData = data.items[itemId];
                         const marketValue = itemData.market_value || 0;
                         const sellPrice = itemData.sell_price || 0;
-                        const cache = CONFIG.priceCache;
-                        cache[itemId] = { marketValue, sellPrice, timestamp: Date.now() };
-                        CONFIG.priceCache = cache;
-                        CONFIG.lastPriceUpdate = Date.now();
-                        callback({ marketValue, sellPrice });
+                        cachePrice(itemId, marketValue, sellPrice);
+                        finishRequest(itemId, { marketValue, sellPrice });
+                        releaseAndContinue(REQUEST_SPACING_MS);
                     } else {
-                        callback({ marketValue: 0, sellPrice: 0 });
+                        failItem();
                     }
                 } catch (e) {
                     console.error('[BazaarQuickPricer] Parse error:', e);
-                    callback({ marketValue: 0, sellPrice: 0 });
+                    failItem();
                 }
-                isProcessingQueue = false;
-                setTimeout(processRequestQueue, 300);
             },
-            onerror: function() {
-                callback({ marketValue: 0, sellPrice: 0 });
-                isProcessingQueue = false;
-                setTimeout(processRequestQueue, 300);
-            }
+            onerror: failItem,
+            ontimeout: function() {
+                console.warn(`[BazaarQuickPricer] Request for item ${itemId} timed out`);
+                failItem();
+            },
+            onabort: failItem
         });
     }
 
+    /**
+     * Get {marketValue, sellPrice} for an item — served from cache when fresh,
+     * otherwise queued behind the rate-limited request queue. The callback is
+     * always invoked exactly once (with zeros on failure).
+     */
     function fetchItemData(itemId, callback) {
-        const now = Date.now();
-        const cached = CONFIG.priceCache[itemId];
-        if (cached && cached.timestamp && (now - cached.timestamp < CONFIG.cacheTimeout)) {
+        const cached = getCachedPrice(itemId);
+        if (cached) {
             callback({ marketValue: cached.marketValue, sellPrice: cached.sellPrice });
             return;
         }
-        requestQueue.push({ itemId, callback });
+        // Dedupe: if this item is already queued or in flight, piggyback on it.
+        if (pendingRequests.has(itemId)) {
+            pendingRequests.get(itemId).push(callback);
+            return;
+        }
+        // A halted queue gets a fresh chance once the previous run has fully drained
+        // (e.g. the user fixed their API key in Settings).
+        if (queueHalted && requestQueue.length === 0 && pendingRequests.size === 0) {
+            queueHalted = false;
+        }
+        pendingRequests.set(itemId, [callback]);
+        requestQueue.push({ itemId, retries: 0 });
         processRequestQueue();
     }
 
@@ -707,18 +1007,22 @@
     // PRICING LOGIC
     // =====================================================================
 
+    /**
+     * Market value minus discount, floored at the NPC sell price unless the
+     * user disabled floor enforcement.
+     */
     function calculateFinalPrice(marketValue, sellPrice, discount) {
-        let finalPrice = Math.round(marketValue * (1 - discount / 100));
+        let finalPrice = Math.round(marketValue * (1 - clampDiscount(discount) / 100));
         if (!CONFIG.disableNpcCheck && sellPrice > 0 && finalPrice < sellPrice) {
-            console.log(`[BazaarQuickPricer] Price ${finalPrice} below NPC sell price ${sellPrice}, adjusting...`);
+            log(`Price ${finalPrice} below NPC sell price ${sellPrice}, adjusting...`);
             finalPrice = sellPrice;
         }
         return finalPrice;
     }
 
     function clearItemInputs(itemElement) {
-        const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
-        const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
+        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
+        const priceDiv = itemElement.querySelector(SELECTORS.priceWrap);
         if (priceDiv) {
             priceDiv.querySelectorAll('input').forEach(input => {
                 input.value = '';
@@ -726,7 +1030,7 @@
             });
         }
         if (amountDiv) {
-            const isQuantityCheckbox = amountDiv.querySelector('div.choice-container, [class*="choiceContainer___"]');
+            const isQuantityCheckbox = amountDiv.querySelector(SELECTORS.quantityCheckbox);
             if (isQuantityCheckbox) {
                 const checkbox = isQuantityCheckbox.querySelector('input');
                 if (checkbox && checkbox.checked) checkbox.click();
@@ -740,16 +1044,20 @@
         }
     }
 
+    /**
+     * Fill one add-items row with its calculated price and quantity.
+     * @returns {Promise<boolean>} true if the price was actually filled
+     */
     function fillItemPrice(itemElement) {
         const image = itemElement.querySelector('img');
-        if (!image) return Promise.resolve();
+        if (!image) return Promise.resolve(false);
         const itemId = getItemIdFromImage(image);
-        if (!itemId) return Promise.resolve();
-        const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
-        const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
-        if (!priceDiv) return Promise.resolve();
+        if (!itemId) return Promise.resolve(false);
+        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
+        const priceDiv = itemElement.querySelector(SELECTORS.priceWrap);
+        if (!priceDiv) { warnSelectorMiss('priceWrap'); return Promise.resolve(false); }
         const priceInputs = priceDiv.querySelectorAll('input');
-        if (priceInputs.length === 0) return Promise.resolve();
+        if (priceInputs.length === 0) return Promise.resolve(false);
 
         return new Promise((resolve) => {
             fetchItemData(itemId, ({ marketValue, sellPrice }) => {
@@ -760,7 +1068,7 @@
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
                     if (amountDiv) {
-                        const isQuantityCheckbox = amountDiv.querySelector('div.choice-container, [class*="choiceContainer___"]');
+                        const isQuantityCheckbox = amountDiv.querySelector(SELECTORS.quantityCheckbox);
                         if (isQuantityCheckbox) {
                             const checkbox = isQuantityCheckbox.querySelector('input');
                             if (checkbox && !checkbox.checked) checkbox.click();
@@ -775,8 +1083,24 @@
                     }
                     const btn = itemElement.querySelector('.quick-price-btn button');
                     if (btn) { btn.classList.add('qp-btn-red'); btn.dataset.mode = 'undo'; }
+                    resolve(true);
+                    return;
+                } else {
+                    // Surface the failure on the button instead of silently doing nothing.
+                    const btn = itemElement.querySelector('.quick-price-btn button');
+                    if (btn && btn.dataset.mode !== 'undo') {
+                        const prevTitle = btn.title;
+                        btn.classList.add('qp-btn-red');
+                        btn.title = 'Price fetch failed — click to retry';
+                        setTimeout(() => {
+                            if (btn.dataset.mode !== 'undo') {
+                                btn.classList.remove('qp-btn-red');
+                                btn.title = prevTitle;
+                            }
+                        }, 2500);
+                    }
                 }
-                resolve();
+                resolve(false);
             });
         });
     }
@@ -785,25 +1109,15 @@
     // TAB / ITEM VISIBILITY
     // =====================================================================
 
-    function getActiveTab() {
-        const tabs = document.querySelectorAll('ul.items-tabs li, div[class*="item___UN3Mg"]');
-        for (const tab of tabs) {
-            if (tab.classList.contains('active') || tab.className.includes('active___')) {
-                return tab.getAttribute('data-category') || tab.textContent.trim().toLowerCase() || 'all';
-            }
-        }
-        return 'all';
-    }
-
+    /** Items in the currently visible add-items list(s), excluding tab entries. */
     function getVisibleItems() {
-        getActiveTab();
-        const allItemsLists = document.querySelectorAll('ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"]');
+        const allItemsLists = document.querySelectorAll(SELECTORS.itemLists);
         let visibleItems = [];
         for (const list of allItemsLists) {
             const listStyle = window.getComputedStyle(list);
             if (listStyle.display !== 'none') {
-                const items = list.querySelectorAll('li.clearfix:not(.disabled), div[class*="item___GYCYJ"], div[class*="item___khvF6"]');
-                visibleItems = visibleItems.concat(Array.from(items).filter(item => !item.className.includes('item___UN3Mg')));
+                const items = list.querySelectorAll(SELECTORS.addItems);
+                visibleItems = visibleItems.concat(Array.from(items).filter(item => !item.className.includes(SELECTORS.tabItemClass)));
             }
         }
         return visibleItems;
@@ -813,25 +1127,36 @@
     // MANAGE ITEMS PAGE
     // =====================================================================
 
+    /**
+     * Fetch the market price for one manage-page item and write it into the input.
+     * @returns {Promise<'updated'|'declined'|'failed'>} what actually happened, so
+     *          batch runs can report real counts instead of attempts.
+     */
     function updateManageItemPrice(priceDiv, itemId) {
-        const priceInput = priceDiv.querySelector('input.input-money, input');
-        if (!priceInput) return;
-        const currentPrice = parseInt(priceInput.value.replace(/,/g, '')) || 0;
-        priceInput.disabled = true;
-        priceInput.style.opacity = '0.5';
-        fetchItemData(itemId, ({ marketValue, sellPrice }) => {
-            priceInput.disabled = false;
-            priceInput.style.opacity = '1';
-            if (marketValue > 0) {
+        return new Promise((resolve) => {
+            const priceInput = priceDiv.querySelector(SELECTORS.managePriceInput);
+            if (!priceInput) { warnSelectorMiss('managePriceInput'); resolve('failed'); return; }
+            const currentPrice = parseInt(priceInput.value.replace(/,/g, ''), 10) || 0;
+            priceInput.disabled = true;
+            priceInput.style.opacity = '0.5';
+            fetchItemData(itemId, async ({ marketValue, sellPrice }) => {
+                priceInput.disabled = false;
+                priceInput.style.opacity = '1';
+                if (marketValue <= 0) {
+                    qpToast('Could not fetch price for this item', 'error');
+                    resolve('failed');
+                    return;
+                }
                 const newPrice = calculateFinalPrice(marketValue, sellPrice, CONFIG.defaultDiscount);
                 const priceDiff = Math.abs(newPrice - currentPrice);
                 const percentDiff = currentPrice > 0 ? (priceDiff / currentPrice) * 100 : 100;
                 if (percentDiff > 20 && currentPrice > 0) {
                     const direction = newPrice > currentPrice ? 'increase' : 'decrease';
-                    const confirmed = confirm(
-                        `Price ${direction} detected!\n\nCurrent: $${currentPrice.toLocaleString()}\nNew: $${newPrice.toLocaleString()}\nDifference: ${percentDiff.toFixed(1)}%\n\nUpdate to new price?`
+                    const confirmed = await qpConfirm(
+                        `Price ${direction} detected!\n\nCurrent: $${currentPrice.toLocaleString()}\nNew: $${newPrice.toLocaleString()}\nDifference: ${percentDiff.toFixed(1)}%\n\nUpdate to new price?`,
+                        { title: 'PRICE CHECK', confirmText: 'UPDATE' }
                     );
-                    if (!confirmed) return;
+                    if (!confirmed) { resolve('declined'); return; }
                 }
                 priceInput.value = newPrice;
                 priceInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -839,16 +1164,41 @@
                 const borderColor = (sellPrice > 0 && newPrice === sellPrice) ? '#ff9800' : '#5F5F5F';
                 priceInput.style.border = `2px solid ${borderColor}`;
                 setTimeout(() => priceInput.style.border = '', 1000);
-            } else {
-                alert('Could not fetch price for this item');
-            }
+                resolve('updated');
+            });
         });
+    }
+
+    /**
+     * Build the per-item button container, prefixing a blinking RW badge dot
+     * when the item is a ranked-war weapon. Shared by both bazaar pages.
+     * @returns {{btnContainer: HTMLDivElement, btnInput: HTMLButtonElement}}
+     */
+    function buildItemButton(rwInfo, { containerClass, buttonClass, svg, normalTitle }) {
+        const btnContainer = document.createElement('div');
+        btnContainer.className = containerClass;
+        const btnInput = document.createElement('button');
+        btnInput.innerHTML = svg;
+        btnInput.className = buttonClass;
+        if (rwInfo.isRanked) {
+            const dot = document.createElement('span');
+            dot.className = `qp-rw-dot${rwInfo.rarity ? ` rw-${rwInfo.rarity}` : ' rw-unknown'}`;
+            dot.title = rwSkipLabel(rwInfo);
+            btnContainer.appendChild(dot);
+            btnContainer.appendChild(btnInput);
+            btnInput.title = `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`;
+        } else {
+            btnContainer.appendChild(btnInput);
+            btnInput.title = normalTitle;
+        }
+        btnInput.setAttribute('aria-label', btnInput.title);
+        return { btnContainer, btnInput };
     }
 
     function addUpdatePriceButton(manageItem) {
         if (processedManageItems.has(manageItem)) return;
-        if (manageItem.className.includes('item___UN3Mg')) return;
-        const priceDiv = manageItem.querySelector('div[class*="price"]');
+        if (manageItem.className.includes(SELECTORS.tabItemClass)) return;
+        const priceDiv = manageItem.querySelector(SELECTORS.managePriceWrap);
         if (!priceDiv) return;
         if (priceDiv.querySelector('.quick-update-price-btn')) {
             processedManageItems.add(manageItem);
@@ -861,48 +1211,37 @@
         if (!itemId) return;
 
         const rwInfo = getRWBonusInfo(manageItem);
-        const btnContainer = document.createElement('div');
-        btnContainer.className = 'quick-update-price-btn';
-        const btnInput = document.createElement('button');
-        btnInput.innerHTML = refreshSVG;
-        btnInput.className = 'qp-btn qp-btn-update';
-
-        if (rwInfo.isRanked) {
-            const dot = document.createElement('span');
-            dot.className = `qp-rw-dot${rwInfo.rarity ? ` rw-${rwInfo.rarity}` : ' rw-unknown'}`;
-            dot.title = rwSkipLabel(rwInfo);
-            btnContainer.appendChild(dot);
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`);
-        } else {
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', 'Update Price');
-        }
+        const { btnContainer, btnInput } = buildItemButton(rwInfo, {
+            containerClass: 'quick-update-price-btn',
+            buttonClass: 'qp-btn qp-btn-update',
+            svg: refreshSVG,
+            normalTitle: 'Update Price'
+        });
 
         priceDiv.style.display = 'flex';
         priceDiv.style.alignItems = 'center';
         priceDiv.appendChild(btnContainer);
 
-        btnInput.addEventListener('click', function(event) {
+        btnInput.addEventListener('click', async function(event) {
             event.stopPropagation();
             event.preventDefault();
-            if (rwInfo.isRanked) {
-                const confirmed = confirm(
-                    `⚠️ RW Weapon Detected\n\nThis appears to be a ${rwSkipLabel(rwInfo)}.\nRW weapons have unique pricing not based on standard market value.\n\nPrice it anyway using the base item's market value?`
-                );
-                if (!confirmed) return;
-            }
+            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+            if (rwInfo.isRanked && !(await confirmRwPricing(rwInfo))) return;
             updateManageItemPrice(priceDiv, itemId);
         });
     }
 
+    /**
+     * Walk up from a matching section heading to the nearest ancestor that
+     * contains item rows — used to scope queries to one bazaar section.
+     */
     function findSectionContainer(matchFn) {
-        const headings = Array.from(document.querySelectorAll('div[role="heading"], div[class*="title"], div[class*="panelHeader"], div[class*="titleContainer"]'));
+        const headings = Array.from(document.querySelectorAll(SELECTORS.sectionHeadings));
         const heading = headings.find(matchFn);
         if (!heading) return null;
         let node = heading.parentElement;
         for (let i = 0; i < 5 && node && node !== document.body; i++) {
-            if (node.querySelector('div[class*="item___"]')) return node;
+            if (node.querySelector(SELECTORS.manageItems)) return node;
             node = node.parentElement;
         }
         return null;
@@ -922,37 +1261,43 @@
             h.textContent.includes('Manage Bazaar')
         );
         if (!container) return [];
-        const manageItemsList = container.querySelectorAll('div[class*="item___"]');
-        return Array.from(manageItemsList).filter(item => !item.className.includes('item___UN3Mg'));
+        const manageItemsList = container.querySelectorAll(SELECTORS.manageItems);
+        return Array.from(manageItemsList).filter(item => !item.className.includes(SELECTORS.tabItemClass));
     }
 
     async function updateAllManagePrices() {
         const items = getManageItems();
-        if (items.length === 0) { alert('No items found to update!'); return; }
+        if (items.length === 0) { qpToast('No items found to update!', 'error'); return; }
         const updateButton = chipFillBtn;
-        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; updateButton.textContent = 'Updating...'; }
-        let updated = 0, skippedRw = 0;
+        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; }
+
+        // Collect the actual work first so progress and totals are accurate.
+        let skippedRw = 0;
+        const work = [];
         for (const item of items) {
-            const priceDiv = item.querySelector('div[class*="price"]');
+            const priceDiv = item.querySelector(SELECTORS.managePriceWrap);
             const image = item.querySelector('img');
-            if (priceDiv && image) {
-                const itemId = getItemIdFromImage(image);
-                if (itemId) {
-                    if (CONFIG.skipRwWeapons) {
-                        const rwInfo = getRWBonusInfo(item);
-                        if (rwInfo.isRanked) { skippedRw++; continue; }
-                    }
-                    await new Promise((resolve) => {
-                        updateManageItemPrice(priceDiv, itemId);
-                        setTimeout(resolve, 350);
-                    });
-                    updated++;
-                }
-            }
+            if (!priceDiv || !image) continue;
+            const itemId = getItemIdFromImage(image);
+            if (!itemId) continue;
+            if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; continue; }
+            work.push({ priceDiv, itemId });
         }
+
+        let updated = 0, failed = 0, done = 0;
+        for (const { priceDiv, itemId } of work) {
+            done++;
+            if (updateButton) updateButton.textContent = `Updating ${done}/${work.length}`;
+            const result = await updateManageItemPrice(priceDiv, itemId);
+            if (result === 'updated') updated++;
+            else if (result === 'failed') failed++;
+        }
+
         if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
-        const skipMsg = skippedRw > 0 ? `\n(${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped)` : '';
-        alert(`Updated ${updated} item prices!${skipMsg}`);
+        let msg = `Updated ${updated} of ${work.length} item price${work.length === 1 ? '' : 's'}`;
+        if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
+        if (failed > 0) msg += ` — ${failed} failed`;
+        qpToast(msg, failed > 0 ? 'error' : 'success', 6000);
     }
 
     // =====================================================================
@@ -978,8 +1323,11 @@
     function applyChipPosition() {
         const pos = GM_getValue('chipPosition', null);
         if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-            chipEl.style.left = pos.x + 'px';
-            chipEl.style.top = pos.y + 'px';
+            // Clamp to the current viewport: a position saved on a large monitor
+            // must not restore off-screen on a phone.
+            const { x, y } = clampChipPosition(pos.x, pos.y);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
             chipEl.style.bottom = 'auto';
             chipEl.style.transform = 'none';
         }
@@ -995,10 +1343,10 @@
         chipEl = document.createElement('div');
         chipEl.className = 'qp-chip';
         chipEl.innerHTML = `
-            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition">⋮⋮</div>
+            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">⋮⋮</div>
             <button class="qp-btn qp-chip-fill" id="qpChipFill">Quick Fill</button>
             <div class="qp-chip-divider"></div>
-            <button class="qp-btn qp-chip-gear" id="qpChipGear" title="Settings">${gearSVG}</button>
+            <button class="qp-btn qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${gearSVG}</button>
         `;
         document.body.appendChild(chipEl);
         chipFillBtn = chipEl.querySelector('#qpChipFill');
@@ -1011,6 +1359,7 @@
         });
 
         chipFillBtn.addEventListener('click', () => {
+            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
             if (chipContext === 'manage') updateAllManagePrices();
             else fillAllItems();
         });
@@ -1048,6 +1397,25 @@
         grip.addEventListener('pointerup', endDrag);
         grip.addEventListener('pointercancel', endDrag);
 
+        // Keyboard repositioning for the grip (paired with its role="button")
+        grip.addEventListener('keydown', (e) => {
+            const step = 10;
+            let dx = 0, dy = 0;
+            if (e.key === 'ArrowLeft') dx = -step;
+            else if (e.key === 'ArrowRight') dx = step;
+            else if (e.key === 'ArrowUp') dy = -step;
+            else if (e.key === 'ArrowDown') dy = step;
+            else return;
+            e.preventDefault();
+            const rect = chipEl.getBoundingClientRect();
+            chipEl.style.bottom = 'auto';
+            chipEl.style.transform = 'none';
+            const { x, y } = clampChipPosition(rect.left + dx, rect.top + dy);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
+            GM_setValue('chipPosition', { x, y });
+        });
+
         window.addEventListener('resize', () => {
             if (!chipEl) return;
             const pos = GM_getValue('chipPosition', null);
@@ -1060,6 +1428,8 @@
 
     function updateChipContext() {
         if (!chipEl) return;
+        // A running batch owns the button label (progress text) — don't clobber it.
+        if (chipFillBtn && chipFillBtn.disabled) return;
         const manageCount = getManageItems().length;
         if (manageCount > 0) {
             chipContext = 'manage';
@@ -1085,44 +1455,33 @@
 
     function addQuickPriceButton(itemElement) {
         if (processedItems.has(itemElement)) return;
-        const descriptionCont = itemElement.querySelector('div[class*="description___"], div.title-wrap');
+        const descriptionCont = itemElement.querySelector(SELECTORS.itemDescription);
         if (!descriptionCont) return;
         if (descriptionCont.querySelector('.quick-price-btn')) { processedItems.add(itemElement); return; }
         processedItems.add(itemElement);
-        const image = itemElement.querySelector('div.image-wrap img');
+        const image = itemElement.querySelector(SELECTORS.itemImage);
         if (!image) return;
         const itemId = getItemIdFromImage(image);
         if (!itemId) return;
         const amountDiv = itemElement.querySelector('div.amount-main-wrap');
         if (!amountDiv) return;
-        const priceInputs = amountDiv.querySelectorAll('div.price div input');
+        const priceInputs = amountDiv.querySelectorAll(SELECTORS.priceInputs);
         if (priceInputs.length === 0) return;
 
         const rwInfo = getRWBonusInfo(itemElement);
-        const btnContainer = document.createElement('div');
-        btnContainer.className = 'quick-price-btn';
-        const btnInput = document.createElement('button');
-        btnInput.innerHTML = addButtonSVG;
-        btnInput.className = 'qp-btn';
+        const { btnContainer, btnInput } = buildItemButton(rwInfo, {
+            containerClass: 'quick-price-btn',
+            buttonClass: 'qp-btn',
+            svg: addButtonSVG,
+            normalTitle: 'Quick Add / Undo'
+        });
         btnInput.dataset.mode = 'add';
-
-        if (rwInfo.isRanked) {
-            const dot = document.createElement('span');
-            dot.className = `qp-rw-dot${rwInfo.rarity ? ` rw-${rwInfo.rarity}` : ' rw-unknown'}`;
-            dot.title = rwSkipLabel(rwInfo);
-            btnContainer.appendChild(dot);
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`);
-        } else {
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', 'Quick Add / Undo');
-        }
 
         descriptionCont.style.display = 'flex';
         descriptionCont.style.alignItems = 'center';
         descriptionCont.appendChild(btnContainer);
 
-        btnInput.addEventListener('click', function(event) {
+        btnInput.addEventListener('click', async function(event) {
             event.stopPropagation();
             if (btnInput.dataset.mode === 'undo') {
                 clearItemInputs(itemElement);
@@ -1130,12 +1489,8 @@
                 btnInput.dataset.mode = 'add';
                 return;
             }
-            if (rwInfo.isRanked) {
-                const confirmed = confirm(
-                    `⚠️ RW Weapon Detected\n\nThis appears to be a ${rwSkipLabel(rwInfo)}.\nRW weapons have unique pricing not based on standard market value.\n\nPrice it anyway using the base item's market value?`
-                );
-                if (!confirmed) return;
-            }
+            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+            if (rwInfo.isRanked && !(await confirmRwPricing(rwInfo))) return;
             btnInput.disabled = true;
             btnInput.style.opacity = '0.5';
             fillItemPrice(itemElement).then(() => { btnInput.disabled = false; btnInput.style.opacity = '1'; });
@@ -1144,20 +1499,27 @@
 
     async function fillAllItems() {
         const items = getVisibleItems();
-        if (items.length === 0) { alert('No items found to fill!'); return; }
+        if (items.length === 0) { qpToast('No items found to fill!', 'error'); return; }
         const fillButton = chipFillBtn;
         if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Filling...'; }
         let skippedRw = 0;
-        const promises = items.map(item => {
-            if (CONFIG.skipRwWeapons) {
-                const rwInfo = getRWBonusInfo(item);
-                if (rwInfo.isRanked) { skippedRw++; return Promise.resolve(); }
-            }
-            return fillItemPrice(item);
+        const toFill = items.filter(item => {
+            if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
+            return true;
         });
+        let completed = 0, filled = 0;
+        const promises = toFill.map(item => fillItemPrice(item).then((ok) => {
+            completed++;
+            if (ok) filled++;
+            if (fillButton) fillButton.textContent = `Filling ${completed}/${toFill.length}`;
+        }));
         await Promise.all(promises);
         if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
-        if (skippedRw > 0) console.log(`[BazaarQuickPricer] Skipped ${skippedRw} RW weapon(s)`);
+        const failedCount = toFill.length - filled;
+        let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
+        if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
+        if (failedCount > 0) msg += ` — ${failedCount} failed`;
+        qpToast(msg, failedCount > 0 ? 'error' : 'success', 6000);
     }
 
     // =====================================================================
@@ -1165,14 +1527,10 @@
     // =====================================================================
 
     function processAllItems() {
-        const items = document.querySelectorAll(
-            'ul.items-cont li.clearfix:not(.disabled), ' +
-            'div[class*="itemsContainner___"] div[class*="item___"], ' +
-            'div[class*="rowItems___"] div[class*="item___"]'
-        );
+        const items = document.querySelectorAll(SELECTORS.allAddItems);
         if (items.length > 0) {
             items.forEach(item => {
-                if (!item.className.includes('item___UN3Mg')) addQuickPriceButton(item);
+                if (!item.className.includes(SELECTORS.tabItemClass)) addQuickPriceButton(item);
             });
         }
     }
@@ -1181,8 +1539,11 @@
     // OBSERVER & INIT
     // =====================================================================
 
+    let bazaarObserver = null;
+
     function setupObserver(bazaarRoot) {
-        const observer = new MutationObserver(() => {
+        if (bazaarObserver) bazaarObserver.disconnect();
+        bazaarObserver = new MutationObserver(() => {
             clearTimeout(mutationDebounceTimer);
             mutationDebounceTimer = setTimeout(() => {
                 processAllItems();
@@ -1190,16 +1551,19 @@
                 updateChipContext();
             }, 300);
         });
-        observer.observe(bazaarRoot, { childList: true, subtree: true });
+        bazaarObserver.observe(bazaarRoot, { childList: true, subtree: true });
     }
 
     function initScript(bazaarRoot) {
-        if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+        // Full init regardless of key state: the chip and item buttons stay usable
+        // and simply prompt for a key when clicked, instead of the script going
+        // dead until a reload if the first-run prompt is dismissed.
         processAllItems();
         setupObserver(bazaarRoot);
         processManageItems();
         createFloatingChip();
         updateChipContext();
+        if (!CONFIG.apiKey) showApiKeyPrompt();
     }
 
     let isScriptInitialized = false;
@@ -1212,42 +1576,60 @@
         }
     }
 
+    const ROOT_WAIT_TIMEOUT_MS = 20000;
+
     function checkForBazaar() {
         if (isScriptInitialized) return;
-        const bazaarRoot = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-        if (bazaarRoot) {
+        const findRoot = () =>
+            document.querySelector(SELECTORS.bazaarRoot) || document.querySelector(SELECTORS.bazaarRootLegacy);
+        const root = findRoot();
+        if (root) {
             isScriptInitialized = true;
-            initScript(bazaarRoot);
+            initScript(root);
             return;
         }
+        // Single observer with a hard timeout — @run-at document-end guarantees
+        // document.body exists, and the timeout ensures the observer can't run
+        // forever on a page state that never renders the bazaar.
         const observer = new MutationObserver(() => {
             if (isScriptInitialized) { observer.disconnect(); return; }
-            const root = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-            if (root) { isScriptInitialized = true; observer.disconnect(); initScript(root); }
-        });
-        if (document.body) {
-            observer.observe(document.body, { childList: true, subtree: true });
-        } else {
-            const docObserver = new MutationObserver(() => {
-                if (document.body) { docObserver.disconnect(); observer.observe(document.body, { childList: true, subtree: true }); }
-            });
-            docObserver.observe(document.documentElement, { childList: true });
-        }
-        let attempts = 0;
-        const pollInterval = setInterval(() => {
-            if (isScriptInitialized) { clearInterval(pollInterval); return; }
-            attempts++;
-            const root = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-            if (root) {
+            const found = findRoot();
+            if (found) {
                 isScriptInitialized = true;
-                clearInterval(pollInterval);
                 observer.disconnect();
-                initScript(root);
-            } else if (attempts > 50) {
-                clearInterval(pollInterval);
-                console.warn('[BazaarQuickPricer] Failed to find bazaar container after 5s');
+                clearTimeout(giveUpTimer);
+                initScript(found);
             }
-        }, 100);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        const giveUpTimer = setTimeout(() => {
+            if (!isScriptInitialized) {
+                observer.disconnect();
+                console.warn(`[BazaarQuickPricer] Bazaar container not found after ${ROOT_WAIT_TIMEOUT_MS / 1000}s — giving up`);
+            }
+        }, ROOT_WAIT_TIMEOUT_MS);
+    }
+
+    // Test hook: under the Node test runner (jsdom + GM_* stubs) expose the pure
+    // helpers and skip booting against a live page. In the browser `module` is
+    // undefined, so this block is inert there and init() runs as normal.
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = {
+            isValidApiKey,
+            clampDiscount,
+            calculateFinalPrice,
+            rwSkipLabel,
+            getRWBonusInfo,
+            detectRarity,
+            getItemIdFromImage,
+            getQuantity,
+            getCachedPrice,
+            cachePrice,
+            clearPriceCache,
+            CONFIG,
+            SELECTORS
+        };
+        return;
     }
 
     init();

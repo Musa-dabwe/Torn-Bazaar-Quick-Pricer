@@ -1,0 +1,16 @@
+{
+  "name": "torn-bazaar-quick-pricer",
+  "version": "2.9.0",
+  "private": true,
+  "description": "Userscript that auto-fills Torn bazaar items with market-based pricing",
+  "license": "MIT",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "jsdom": "^26.0.0",
+    "vitest": "^3.0.0"
+  }
+}
