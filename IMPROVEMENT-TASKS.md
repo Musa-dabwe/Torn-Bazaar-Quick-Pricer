@@ -237,11 +237,11 @@ Line references point at `script-v2_8_9.js`.
   `torn-bazaar-quick-pricer.user.js` (the `.user.js` suffix also enables one-click
   install from the raw GitHub URL) and keep the version only in the metadata block.
 
-- [ ] **6.3 — Add ESLint + a userscript-aware config.**
+- [x] **6.3 — Add ESLint + a userscript-aware config.** *(Done in v2.9: flat config with GM_* globals; runs in CI.)*
   A minimal `package.json` with ESLint (`no-unused-vars` alone would have caught
   5.1) and the `userscripts` env for `GM_*` globals. Run it in a GitHub Action on PRs.
 
-- [ ] **6.4 — Add unit tests for the pure logic.**
+- [x] **6.4 — Add unit tests for the pure logic.** *(Done in v2.9: 30 Vitest + jsdom tests covering pricing, validation, parsing, RW detection, settings, and the price cache.)*
   `calculateFinalPrice`, `rwSkipLabel`, the API-key format check, item-ID extraction
   from image URLs, and `getQuantity` parsing are all pure and trivially testable with
   Vitest/Jest + jsdom once extracted (pairs with 3.1/5.3 refactors).

@@ -1610,6 +1610,28 @@
         }, ROOT_WAIT_TIMEOUT_MS);
     }
 
+    // Test hook: under the Node test runner (jsdom + GM_* stubs) expose the pure
+    // helpers and skip booting against a live page. In the browser `module` is
+    // undefined, so this block is inert there and init() runs as normal.
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = {
+            isValidApiKey,
+            clampDiscount,
+            calculateFinalPrice,
+            rwSkipLabel,
+            getRWBonusInfo,
+            detectRarity,
+            getItemIdFromImage,
+            getQuantity,
+            getCachedPrice,
+            cachePrice,
+            clearPriceCache,
+            CONFIG,
+            SELECTORS
+        };
+        return;
+    }
+
     init();
 
 })();
