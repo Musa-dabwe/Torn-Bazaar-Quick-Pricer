@@ -1,5 +1,11 @@
 # Code Audit — Torn Bazaar Quick Pricer v2.8.9
 
+> **Status (v2.9, 2026-07-06): 40 of 41 tasks implemented.** Everything below except
+> task 2.1 shipped in v2.9 (`torn-bazaar-quick-pricer.user.js`). Task 2.1 (API v2 /
+> Authorization-header migration) is **deferred** because the response-schema change
+> can't be safely verified without live Torn API access. See `CHANGELOG.md` for the
+> release summary.
+
 Comprehensive audit of `script-v2_8_9.js` (1,255 lines). Each item is an actionable task,
 grouped by theme and tagged with a priority:
 
@@ -81,13 +87,16 @@ Line references point at `script-v2_8_9.js`.
 
 ## 2. Security & privacy (P2)
 
-- [ ] **2.1 — Move the API key out of the URL query string.**
+- [ ] **2.1 — Move the API key out of the URL query string.** ⏸️ **DEFERRED**
   Requests use `?...&key=${apiKey}` (line 657). Query strings end up in proxy and
   server logs. Torn API v2 accepts the key via the `Authorization: ApiKey <key>`
   header — migrate to v2 (`api.torn.com/v2/...`) or at minimum document why v1 is
   required.
+  *Deferred by decision (2026-07-06): the v2 response schema differs from v1 and the
+  migration can't be verified without live API access. Revisit with in-game testing;
+  the v1 endpoint remains in place until then.*
 
-- [ ] **2.2 — Recommend/verify minimal API key scope.**
+- [x] **2.2 — Recommend/verify minimal API key scope.** *(Done in v2.9: README documents Public-scope keys.)*
   The script only needs public item market data. Document (README + key prompt) that
   a **Public**-level key is sufficient, so users don't paste full-access keys into a
   third-party script.
@@ -246,12 +255,12 @@ Line references point at `script-v2_8_9.js`.
   from image URLs, and `getQuantity` parsing are all pure and trivially testable with
   Vitest/Jest + jsdom once extracted (pairs with 3.1/5.3 refactors).
 
-- [ ] **6.5 — Expand the README beyond release notes.**
+- [x] **6.5 — Expand the README beyond release notes.** *(Done in v2.9: full rewrite; history moved to `CHANGELOG.md`.)*
   Add: what the script does (with a screenshot), installation for Tampermonkey and
   Torn PDA, how to create an appropriately-scoped API key, settings reference, and a
   short contributing/development section. Move version history to `CHANGELOG.md`.
 
-- [ ] **6.6 — Add a CHANGELOG and tag releases.**
+- [x] **6.6 — Add a CHANGELOG and tag releases.** *(Done in v2.9: `CHANGELOG.md` added; tag `v2.9` + GitHub Release should be cut when this lands on `main`.)*
   Git tags per version plus GitHub Releases would let Greasy Fork users diff what
   changed and make rollbacks trivial.
 
