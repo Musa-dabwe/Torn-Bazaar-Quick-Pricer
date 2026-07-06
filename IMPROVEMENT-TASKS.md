@@ -104,7 +104,7 @@ Line references point at `script-v2_8_9.js`.
 
 ## 3. Reliability & robustness (P2)
 
-- [ ] **3.1 — Centralize Torn DOM selectors in one place.**
+- [x] **3.1 — Centralize Torn DOM selectors in one place.** *(Done in v2.9: `SELECTORS` object + `warnSelectorMiss()` diagnostics.)*
   Hashed CSS-module classnames (`item___UN3Mg`, `item___GYCYJ`, `item___khvF6`,
   `itemsContainner___`, `rowItems___`, `glow-*`, `bonus-attachment-*`) are scattered
   across ~10 functions. One Torn front-end rebuild changes the hashes and breaks the
@@ -112,14 +112,14 @@ Line references point at `script-v2_8_9.js`.
   breakage is a one-spot fix, and log a clear diagnostic when a selector matches
   nothing.
 
-- [ ] **3.2 — Simplify and bound the triple bootstrap in `checkForBazaar()`.**
+- [x] **3.2 — Simplify and bound the triple bootstrap in `checkForBazaar()`.** *(Done in v2.9: single observer with a 20 s hard timeout.)*
   Lines 1215–1251 run a MutationObserver **and** a 100 ms polling interval **and** a
   fallback documentElement observer for the same goal. The poll gives up after 5 s but
   the body observer runs forever if the bazaar root never appears (e.g. wrong page
   state) — a permanent observer leak. Pick one mechanism (observer with a timeout
   that disconnects it) and remove the poll.
 
-- [ ] **3.3 — Disconnect observers / remove listeners on re-injection.**
+- [x] **3.3 — Disconnect observers / remove listeners on re-injection.** *(Done in v2.9: startup sweep of `#qp-style`/`.qp-chip`/`.qp-toast-wrap`/`.qp-overlay`; observer refs kept and disconnected before reuse.)*
   `createFloatingChip()` sweeps orphaned `.qp-chip` elements (line 994) but the
   `resize` listener (line 1051), the bazaar-root MutationObserver (line 1193), and
   the injected `<style>` element are never cleaned up. On PDA re-injection these
@@ -193,7 +193,7 @@ Line references point at `script-v2_8_9.js`.
   settings footer (line 581). Add a `const VERSION` (read `GM_info.script.version`
   where available) and reference it.
 
-- [ ] **5.3 — Deduplicate the RW-detection + button-building logic.**
+- [x] **5.3 — Deduplicate the RW-detection + button-building logic.** *(Done in v2.9: shared `buildItemButton()` + `confirmRwPricing()`.)*
   `addUpdatePriceButton()` (lines 848–897) and `addQuickPriceButton()` (lines
   1086–1143) share ~40 lines of near-identical dot/button/confirm construction, and
   the RW confirm message string is duplicated verbatim. Extract shared helpers
@@ -208,16 +208,16 @@ Line references point at `script-v2_8_9.js`.
   cache, deserializes the whole object). In hot paths (`fetchItemData` per item) this
   is wasteful. Cache reads in memory and write through on set.
 
-- [ ] **5.6 — Add a debug flag for console logging.**
+- [x] **5.6 — Add a debug flag for console logging.** *(Done in v2.9: `debug` storage flag gates `log()`.)*
   Per-item `console.log` calls (RW detection, NPC floor adjustments) are noisy in
   normal use. Gate them behind a `CONFIG.debug` setting with a tiny `log()` helper.
 
-- [ ] **5.7 — Tidy the stylesheet.**
+- [x] **5.7 — Tidy the stylesheet.** *(Done in v2.9: merged duplicate `.qp-modal` blocks, removed dead/redundant rules.)*
   `.qp-modal` is declared twice (lines 190 and 212 — variables block vs. layout
   block); several `border-radius: 0 !important` rules repeat what `.qp-btn` already
   sets; and the `!important` density makes future overrides painful. Consolidate.
 
-- [ ] **5.8 — Add JSDoc to the non-obvious functions.**
+- [x] **5.8 — Add JSDoc to the non-obvious functions.** *(Done in v2.9.)*
   `getRWBonusInfo`, `calculateFinalPrice`, `fetchItemData`, `findSectionContainer`,
   and the CONFIG getters (especially the PDA-key dance, which already has a good
   comment) would benefit from typed JSDoc for editor support.

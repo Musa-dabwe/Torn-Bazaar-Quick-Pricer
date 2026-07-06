@@ -131,6 +131,54 @@
     }
 
     // =====================================================================
+    // DEBUG LOGGING  (set the "debug" flag in script storage to enable)
+    // =====================================================================
+
+    const DEBUG = getSetting('debug', false);
+    function log(...args) {
+        if (DEBUG) console.log('[BazaarQuickPricer]', ...args);
+    }
+
+    // =====================================================================
+    // TORN DOM SELECTORS  (single source of truth: Torn's CSS-module class
+    // hashes change on front-end rebuilds, so every fragile selector lives
+    // here and a breakage is a one-spot fix)
+    // =====================================================================
+
+    const SELECTORS = {
+        bazaarRoot: '#bazaarRoot',
+        bazaarRootLegacy: '.bazaar-main-wrap',
+        // Add-items page
+        itemLists: 'ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"]',
+        addItems: 'li.clearfix:not(.disabled), div[class*="item___GYCYJ"], div[class*="item___khvF6"]',
+        allAddItems: 'ul.items-cont li.clearfix:not(.disabled), div[class*="itemsContainner___"] div[class*="item___"], div[class*="rowItems___"] div[class*="item___"]',
+        tabItemClass: 'item___UN3Mg', // tab entries share the item___ prefix; excluded everywhere
+        itemTitle: 'div[class*="name___"], div.title-wrap',
+        itemDescription: 'div[class*="description___"], div.title-wrap',
+        itemImage: 'div.image-wrap img',
+        amountWrap: 'div[class*="amount___"], div.amount-main-wrap',
+        priceWrap: 'div[class*="price___"], div.price',
+        priceInputs: 'div.price div input',
+        quantityCheckbox: 'div.choice-container, [class*="choiceContainer___"]',
+        // Manage page
+        manageItems: 'div[class*="item___"]',
+        managePriceWrap: 'div[class*="price"]',
+        managePriceInput: 'input.input-money, input',
+        sectionHeadings: 'div[role="heading"], div[class*="title"], div[class*="panelHeader"], div[class*="titleContainer"]',
+        // RW detection
+        rwBonusIcons: 'ul.bonuses-wrap li.bonus i[class^="bonus-attachment-"]',
+        rarityGlow: 'div.title-wrap div.image-wrap[class*="glow-"]'
+    };
+
+    const warnedSelectors = new Set();
+    /** Warn once per selector when an expected element is missing (Torn markup change). */
+    function warnSelectorMiss(name) {
+        if (warnedSelectors.has(name)) return;
+        warnedSelectors.add(name);
+        console.warn(`[BazaarQuickPricer] Selector "${name}" matched nothing — Torn's markup may have changed`);
+    }
+
+    // =====================================================================
     // RW WEAPON DETECTION
     // =====================================================================
 
@@ -149,14 +197,14 @@
         'smash', 'spray', 'storage', 'toxin'
     ]);
 
-    const RW_RARITY_KEYWORDS = ['yellow', 'orange', 'red', 'superior', 'epic', 'legendary'];
-
+    /**
+     * Detect whether an item row is a ranked-war weapon.
+     * Torn renders RW bonuses as <i class="bonus-attachment-{name}"> inside
+     * <li class="bonus left"> inside <ul class="bonuses-wrap">.
+     * @returns {{isRanked: boolean, bonus: ?string, rarity: ?string}}
+     */
     function getRWBonusInfo(itemElement) {
-        // Torn renders RW bonuses as <i class="bonus-attachment-{name}">
-        // inside <li class="bonus left"> inside <ul class="bonuses-wrap">.
-        const bonusIcons = itemElement.querySelectorAll(
-            'ul.bonuses-wrap li.bonus i[class^="bonus-attachment-"]'
-        );
+        const bonusIcons = itemElement.querySelectorAll(SELECTORS.rwBonusIcons);
         for (const icon of bonusIcons) {
             const cls = icon.className || '';
             if (cls.includes('blank-bonus')) continue;
@@ -165,17 +213,16 @@
             const bonusName = match[1].toLowerCase();
             if (RW_BONUS_NAMES.has(bonusName)) {
                 const rarity = detectRarity(itemElement);
-                console.log(`[BazaarQuickPricer] RW detected: ${bonusName} (${rarity || 'unknown'})`);
+                log(`RW detected: ${bonusName} (${rarity || 'unknown'})`);
                 return { isRanked: true, bonus: bonusName, rarity };
             }
         }
         return { isRanked: false, bonus: null, rarity: null };
     }
 
+    /** Rarity is encoded as glow-yellow / glow-orange / glow-red on the image wrap. */
     function detectRarity(itemElement) {
-        // Rarity is encoded as glow-yellow / glow-orange / glow-red
-        // on the image-wrap div inside div.title-wrap.
-        const glowEl = itemElement.querySelector('div.title-wrap div.image-wrap[class*="glow-"]');
+        const glowEl = itemElement.querySelector(SELECTORS.rarityGlow);
         if (!glowEl) return null;
         const cls = glowEl.className;
         if (cls.includes('glow-yellow')) return 'yellow';
@@ -209,7 +256,14 @@
     // =====================================================================
     // GLOBAL CSS  (button system + badges)
     // =====================================================================
+
+    // Best-effort cleanup of a previous instance (PDA re-injection / SPA nav
+    // without a full reload): sweep any UI the old instance left in the DOM.
+    ['#qp-style', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
+        document.querySelectorAll(sel).forEach(el => el.remove()));
+
     const style = document.createElement('style');
+    style.id = 'qp-style';
     style.textContent = `
         .qp-btn {
             background: #5F5F5F !important;
@@ -228,11 +282,8 @@
         }
         .qp-btn:hover { filter: brightness(0.8); }
         .qp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .qp-btn-red { background: #E3392C !important; color: white !important; border-radius: 0 !important; }
-        .qp-btn-top { padding: 5px 11px; margin-left: 5px; }
+        .qp-btn-red { background: #E3392C !important; color: white !important; }
         .qp-btn-update { padding: 5px; }
-        .qp-btn-settings { border-radius: 0 !important; }
-        .qp-btn-fill { border-radius: 0 !important; border-right: 1px solid rgba(0,0,0,0.1); }
 
         .quick-price-btn, .quick-update-price-btn {
             display: flex; align-items: center; flex-shrink: 0;
@@ -257,19 +308,6 @@
         }
 
         /* ── TERMINAL MONO SETTINGS UI (light only) ── */
-        .qp-modal {
-            --bg: #f4f4f0;
-            --header-bg: #14140f;
-            --header-text: #c8f5cf;
-            --text: #1a1a1a;
-            --muted: #5a5a5a;
-            --accent: #0a7a3d;
-            --border: #c8c8c0;
-            --field: #ffffff;
-            --danger: #b3271e;
-        }
-
-
         .qp-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.85);
@@ -280,6 +318,15 @@
             box-sizing: border-box;
         }
         .qp-modal {
+            --bg: #f4f4f0;
+            --header-bg: #14140f;
+            --header-text: #c8f5cf;
+            --text: #1a1a1a;
+            --muted: #5a5a5a;
+            --accent: #0a7a3d;
+            --border: #c8c8c0;
+            --field: #ffffff;
+            --danger: #b3271e;
             width: 100%; max-width: 420px;
             background: var(--bg);
             color: var(--text);
@@ -361,7 +408,6 @@
             outline: none;
             width: 100%;
         }
-        .qp-card input:focus { outline: none; }
         .qp-card:focus-within { border-color: var(--accent); }
         .qp-input-wrap {
             display: flex;
@@ -655,7 +701,7 @@
     }
 
     // =====================================================================
-    // UI — API KEY PROMPT  (kept minimal / unchanged)
+    // UI — API KEY PROMPT
     // =====================================================================
 
     function showApiKeyPrompt() {
@@ -807,6 +853,7 @@
     // =====================================================================
 
     const itemIdCache = new Map();
+    /** Torn item images live under /images/items/{itemId}/ — extract the id. */
     function getItemIdFromImage(image) {
         const src = image.src;
         if (itemIdCache.has(src)) return itemIdCache.get(src);
@@ -820,7 +867,7 @@
     }
 
     function getQuantity(itemElement) {
-        const titleWrap = itemElement.querySelector('div[class*="name___"], div.title-wrap');
+        const titleWrap = itemElement.querySelector(SELECTORS.itemTitle);
         if (!titleWrap) return 1;
         // Anchored to the end of the title so item names containing "x<digits>"
         // (e.g. weapon model numbers) can't be misread as a quantity.
@@ -930,6 +977,11 @@
         });
     }
 
+    /**
+     * Get {marketValue, sellPrice} for an item — served from cache when fresh,
+     * otherwise queued behind the rate-limited request queue. The callback is
+     * always invoked exactly once (with zeros on failure).
+     */
     function fetchItemData(itemId, callback) {
         const cached = getCachedPrice(itemId);
         if (cached) {
@@ -955,18 +1007,22 @@
     // PRICING LOGIC
     // =====================================================================
 
+    /**
+     * Market value minus discount, floored at the NPC sell price unless the
+     * user disabled floor enforcement.
+     */
     function calculateFinalPrice(marketValue, sellPrice, discount) {
         let finalPrice = Math.round(marketValue * (1 - clampDiscount(discount) / 100));
         if (!CONFIG.disableNpcCheck && sellPrice > 0 && finalPrice < sellPrice) {
-            console.log(`[BazaarQuickPricer] Price ${finalPrice} below NPC sell price ${sellPrice}, adjusting...`);
+            log(`Price ${finalPrice} below NPC sell price ${sellPrice}, adjusting...`);
             finalPrice = sellPrice;
         }
         return finalPrice;
     }
 
     function clearItemInputs(itemElement) {
-        const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
-        const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
+        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
+        const priceDiv = itemElement.querySelector(SELECTORS.priceWrap);
         if (priceDiv) {
             priceDiv.querySelectorAll('input').forEach(input => {
                 input.value = '';
@@ -974,7 +1030,7 @@
             });
         }
         if (amountDiv) {
-            const isQuantityCheckbox = amountDiv.querySelector('div.choice-container, [class*="choiceContainer___"]');
+            const isQuantityCheckbox = amountDiv.querySelector(SELECTORS.quantityCheckbox);
             if (isQuantityCheckbox) {
                 const checkbox = isQuantityCheckbox.querySelector('input');
                 if (checkbox && checkbox.checked) checkbox.click();
@@ -988,16 +1044,20 @@
         }
     }
 
+    /**
+     * Fill one add-items row with its calculated price and quantity.
+     * @returns {Promise<boolean>} true if the price was actually filled
+     */
     function fillItemPrice(itemElement) {
         const image = itemElement.querySelector('img');
-        if (!image) return Promise.resolve();
+        if (!image) return Promise.resolve(false);
         const itemId = getItemIdFromImage(image);
-        if (!itemId) return Promise.resolve();
-        const amountDiv = itemElement.querySelector('div[class*="amount___"], div.amount-main-wrap');
-        const priceDiv = itemElement.querySelector('div[class*="price___"], div.price');
-        if (!priceDiv) return Promise.resolve();
+        if (!itemId) return Promise.resolve(false);
+        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
+        const priceDiv = itemElement.querySelector(SELECTORS.priceWrap);
+        if (!priceDiv) { warnSelectorMiss('priceWrap'); return Promise.resolve(false); }
         const priceInputs = priceDiv.querySelectorAll('input');
-        if (priceInputs.length === 0) return Promise.resolve();
+        if (priceInputs.length === 0) return Promise.resolve(false);
 
         return new Promise((resolve) => {
             fetchItemData(itemId, ({ marketValue, sellPrice }) => {
@@ -1008,7 +1068,7 @@
                         input.dispatchEvent(new Event('input', { bubbles: true }));
                     });
                     if (amountDiv) {
-                        const isQuantityCheckbox = amountDiv.querySelector('div.choice-container, [class*="choiceContainer___"]');
+                        const isQuantityCheckbox = amountDiv.querySelector(SELECTORS.quantityCheckbox);
                         if (isQuantityCheckbox) {
                             const checkbox = isQuantityCheckbox.querySelector('input');
                             if (checkbox && !checkbox.checked) checkbox.click();
@@ -1023,6 +1083,8 @@
                     }
                     const btn = itemElement.querySelector('.quick-price-btn button');
                     if (btn) { btn.classList.add('qp-btn-red'); btn.dataset.mode = 'undo'; }
+                    resolve(true);
+                    return;
                 } else {
                     // Surface the failure on the button instead of silently doing nothing.
                     const btn = itemElement.querySelector('.quick-price-btn button');
@@ -1038,7 +1100,7 @@
                         }, 2500);
                     }
                 }
-                resolve();
+                resolve(false);
             });
         });
     }
@@ -1047,14 +1109,15 @@
     // TAB / ITEM VISIBILITY
     // =====================================================================
 
+    /** Items in the currently visible add-items list(s), excluding tab entries. */
     function getVisibleItems() {
-        const allItemsLists = document.querySelectorAll('ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"]');
+        const allItemsLists = document.querySelectorAll(SELECTORS.itemLists);
         let visibleItems = [];
         for (const list of allItemsLists) {
             const listStyle = window.getComputedStyle(list);
             if (listStyle.display !== 'none') {
-                const items = list.querySelectorAll('li.clearfix:not(.disabled), div[class*="item___GYCYJ"], div[class*="item___khvF6"]');
-                visibleItems = visibleItems.concat(Array.from(items).filter(item => !item.className.includes('item___UN3Mg')));
+                const items = list.querySelectorAll(SELECTORS.addItems);
+                visibleItems = visibleItems.concat(Array.from(items).filter(item => !item.className.includes(SELECTORS.tabItemClass)));
             }
         }
         return visibleItems;
@@ -1071,8 +1134,8 @@
      */
     function updateManageItemPrice(priceDiv, itemId) {
         return new Promise((resolve) => {
-            const priceInput = priceDiv.querySelector('input.input-money, input');
-            if (!priceInput) { resolve('failed'); return; }
+            const priceInput = priceDiv.querySelector(SELECTORS.managePriceInput);
+            if (!priceInput) { warnSelectorMiss('managePriceInput'); resolve('failed'); return; }
             const currentPrice = parseInt(priceInput.value.replace(/,/g, ''), 10) || 0;
             priceInput.disabled = true;
             priceInput.style.opacity = '0.5';
@@ -1106,10 +1169,36 @@
         });
     }
 
+    /**
+     * Build the per-item button container, prefixing a blinking RW badge dot
+     * when the item is a ranked-war weapon. Shared by both bazaar pages.
+     * @returns {{btnContainer: HTMLDivElement, btnInput: HTMLButtonElement}}
+     */
+    function buildItemButton(rwInfo, { containerClass, buttonClass, svg, normalTitle }) {
+        const btnContainer = document.createElement('div');
+        btnContainer.className = containerClass;
+        const btnInput = document.createElement('button');
+        btnInput.innerHTML = svg;
+        btnInput.className = buttonClass;
+        if (rwInfo.isRanked) {
+            const dot = document.createElement('span');
+            dot.className = `qp-rw-dot${rwInfo.rarity ? ` rw-${rwInfo.rarity}` : ' rw-unknown'}`;
+            dot.title = rwSkipLabel(rwInfo);
+            btnContainer.appendChild(dot);
+            btnContainer.appendChild(btnInput);
+            btnInput.title = `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`;
+        } else {
+            btnContainer.appendChild(btnInput);
+            btnInput.title = normalTitle;
+        }
+        btnInput.setAttribute('aria-label', btnInput.title);
+        return { btnContainer, btnInput };
+    }
+
     function addUpdatePriceButton(manageItem) {
         if (processedManageItems.has(manageItem)) return;
-        if (manageItem.className.includes('item___UN3Mg')) return;
-        const priceDiv = manageItem.querySelector('div[class*="price"]');
+        if (manageItem.className.includes(SELECTORS.tabItemClass)) return;
+        const priceDiv = manageItem.querySelector(SELECTORS.managePriceWrap);
         if (!priceDiv) return;
         if (priceDiv.querySelector('.quick-update-price-btn')) {
             processedManageItems.add(manageItem);
@@ -1122,23 +1211,12 @@
         if (!itemId) return;
 
         const rwInfo = getRWBonusInfo(manageItem);
-        const btnContainer = document.createElement('div');
-        btnContainer.className = 'quick-update-price-btn';
-        const btnInput = document.createElement('button');
-        btnInput.innerHTML = refreshSVG;
-        btnInput.className = 'qp-btn qp-btn-update';
-
-        if (rwInfo.isRanked) {
-            const dot = document.createElement('span');
-            dot.className = `qp-rw-dot${rwInfo.rarity ? ` rw-${rwInfo.rarity}` : ' rw-unknown'}`;
-            dot.title = rwSkipLabel(rwInfo);
-            btnContainer.appendChild(dot);
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`);
-        } else {
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', 'Update Price');
-        }
+        const { btnContainer, btnInput } = buildItemButton(rwInfo, {
+            containerClass: 'quick-update-price-btn',
+            buttonClass: 'qp-btn qp-btn-update',
+            svg: refreshSVG,
+            normalTitle: 'Update Price'
+        });
 
         priceDiv.style.display = 'flex';
         priceDiv.style.alignItems = 'center';
@@ -1153,13 +1231,17 @@
         });
     }
 
+    /**
+     * Walk up from a matching section heading to the nearest ancestor that
+     * contains item rows — used to scope queries to one bazaar section.
+     */
     function findSectionContainer(matchFn) {
-        const headings = Array.from(document.querySelectorAll('div[role="heading"], div[class*="title"], div[class*="panelHeader"], div[class*="titleContainer"]'));
+        const headings = Array.from(document.querySelectorAll(SELECTORS.sectionHeadings));
         const heading = headings.find(matchFn);
         if (!heading) return null;
         let node = heading.parentElement;
         for (let i = 0; i < 5 && node && node !== document.body; i++) {
-            if (node.querySelector('div[class*="item___"]')) return node;
+            if (node.querySelector(SELECTORS.manageItems)) return node;
             node = node.parentElement;
         }
         return null;
@@ -1179,8 +1261,8 @@
             h.textContent.includes('Manage Bazaar')
         );
         if (!container) return [];
-        const manageItemsList = container.querySelectorAll('div[class*="item___"]');
-        return Array.from(manageItemsList).filter(item => !item.className.includes('item___UN3Mg'));
+        const manageItemsList = container.querySelectorAll(SELECTORS.manageItems);
+        return Array.from(manageItemsList).filter(item => !item.className.includes(SELECTORS.tabItemClass));
     }
 
     async function updateAllManagePrices() {
@@ -1193,7 +1275,7 @@
         let skippedRw = 0;
         const work = [];
         for (const item of items) {
-            const priceDiv = item.querySelector('div[class*="price"]');
+            const priceDiv = item.querySelector(SELECTORS.managePriceWrap);
             const image = item.querySelector('img');
             if (!priceDiv || !image) continue;
             const itemId = getItemIdFromImage(image);
@@ -1346,6 +1428,8 @@
 
     function updateChipContext() {
         if (!chipEl) return;
+        // A running batch owns the button label (progress text) — don't clobber it.
+        if (chipFillBtn && chipFillBtn.disabled) return;
         const manageCount = getManageItems().length;
         if (manageCount > 0) {
             chipContext = 'manage';
@@ -1371,38 +1455,27 @@
 
     function addQuickPriceButton(itemElement) {
         if (processedItems.has(itemElement)) return;
-        const descriptionCont = itemElement.querySelector('div[class*="description___"], div.title-wrap');
+        const descriptionCont = itemElement.querySelector(SELECTORS.itemDescription);
         if (!descriptionCont) return;
         if (descriptionCont.querySelector('.quick-price-btn')) { processedItems.add(itemElement); return; }
         processedItems.add(itemElement);
-        const image = itemElement.querySelector('div.image-wrap img');
+        const image = itemElement.querySelector(SELECTORS.itemImage);
         if (!image) return;
         const itemId = getItemIdFromImage(image);
         if (!itemId) return;
         const amountDiv = itemElement.querySelector('div.amount-main-wrap');
         if (!amountDiv) return;
-        const priceInputs = amountDiv.querySelectorAll('div.price div input');
+        const priceInputs = amountDiv.querySelectorAll(SELECTORS.priceInputs);
         if (priceInputs.length === 0) return;
 
         const rwInfo = getRWBonusInfo(itemElement);
-        const btnContainer = document.createElement('div');
-        btnContainer.className = 'quick-price-btn';
-        const btnInput = document.createElement('button');
-        btnInput.innerHTML = addButtonSVG;
-        btnInput.className = 'qp-btn';
+        const { btnContainer, btnInput } = buildItemButton(rwInfo, {
+            containerClass: 'quick-price-btn',
+            buttonClass: 'qp-btn',
+            svg: addButtonSVG,
+            normalTitle: 'Quick Add / Undo'
+        });
         btnInput.dataset.mode = 'add';
-
-        if (rwInfo.isRanked) {
-            const dot = document.createElement('span');
-            dot.className = `qp-rw-dot${rwInfo.rarity ? ` rw-${rwInfo.rarity}` : ' rw-unknown'}`;
-            dot.title = rwSkipLabel(rwInfo);
-            btnContainer.appendChild(dot);
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`);
-        } else {
-            btnContainer.appendChild(btnInput);
-            btnInput.setAttribute('title', 'Quick Add / Undo');
-        }
 
         descriptionCont.style.display = 'flex';
         descriptionCont.style.alignItems = 'center';
@@ -1434,16 +1507,19 @@
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
             return true;
         });
-        let completed = 0;
-        const promises = toFill.map(item => fillItemPrice(item).then(() => {
+        let completed = 0, filled = 0;
+        const promises = toFill.map(item => fillItemPrice(item).then((ok) => {
             completed++;
+            if (ok) filled++;
             if (fillButton) fillButton.textContent = `Filling ${completed}/${toFill.length}`;
         }));
         await Promise.all(promises);
         if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
-        let msg = `Filled ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
+        const failedCount = toFill.length - filled;
+        let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
-        qpToast(msg, 'success');
+        if (failedCount > 0) msg += ` — ${failedCount} failed`;
+        qpToast(msg, failedCount > 0 ? 'error' : 'success', 6000);
     }
 
     // =====================================================================
@@ -1451,14 +1527,10 @@
     // =====================================================================
 
     function processAllItems() {
-        const items = document.querySelectorAll(
-            'ul.items-cont li.clearfix:not(.disabled), ' +
-            'div[class*="itemsContainner___"] div[class*="item___"], ' +
-            'div[class*="rowItems___"] div[class*="item___"]'
-        );
+        const items = document.querySelectorAll(SELECTORS.allAddItems);
         if (items.length > 0) {
             items.forEach(item => {
-                if (!item.className.includes('item___UN3Mg')) addQuickPriceButton(item);
+                if (!item.className.includes(SELECTORS.tabItemClass)) addQuickPriceButton(item);
             });
         }
     }
@@ -1467,8 +1539,11 @@
     // OBSERVER & INIT
     // =====================================================================
 
+    let bazaarObserver = null;
+
     function setupObserver(bazaarRoot) {
-        const observer = new MutationObserver(() => {
+        if (bazaarObserver) bazaarObserver.disconnect();
+        bazaarObserver = new MutationObserver(() => {
             clearTimeout(mutationDebounceTimer);
             mutationDebounceTimer = setTimeout(() => {
                 processAllItems();
@@ -1476,7 +1551,7 @@
                 updateChipContext();
             }, 300);
         });
-        observer.observe(bazaarRoot, { childList: true, subtree: true });
+        bazaarObserver.observe(bazaarRoot, { childList: true, subtree: true });
     }
 
     function initScript(bazaarRoot) {
@@ -1501,42 +1576,38 @@
         }
     }
 
+    const ROOT_WAIT_TIMEOUT_MS = 20000;
+
     function checkForBazaar() {
         if (isScriptInitialized) return;
-        const bazaarRoot = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-        if (bazaarRoot) {
+        const findRoot = () =>
+            document.querySelector(SELECTORS.bazaarRoot) || document.querySelector(SELECTORS.bazaarRootLegacy);
+        const root = findRoot();
+        if (root) {
             isScriptInitialized = true;
-            initScript(bazaarRoot);
+            initScript(root);
             return;
         }
+        // Single observer with a hard timeout — @run-at document-end guarantees
+        // document.body exists, and the timeout ensures the observer can't run
+        // forever on a page state that never renders the bazaar.
         const observer = new MutationObserver(() => {
             if (isScriptInitialized) { observer.disconnect(); return; }
-            const root = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-            if (root) { isScriptInitialized = true; observer.disconnect(); initScript(root); }
-        });
-        if (document.body) {
-            observer.observe(document.body, { childList: true, subtree: true });
-        } else {
-            const docObserver = new MutationObserver(() => {
-                if (document.body) { docObserver.disconnect(); observer.observe(document.body, { childList: true, subtree: true }); }
-            });
-            docObserver.observe(document.documentElement, { childList: true });
-        }
-        let attempts = 0;
-        const pollInterval = setInterval(() => {
-            if (isScriptInitialized) { clearInterval(pollInterval); return; }
-            attempts++;
-            const root = document.getElementById('bazaarRoot') || document.querySelector('.bazaar-main-wrap');
-            if (root) {
+            const found = findRoot();
+            if (found) {
                 isScriptInitialized = true;
-                clearInterval(pollInterval);
                 observer.disconnect();
-                initScript(root);
-            } else if (attempts > 50) {
-                clearInterval(pollInterval);
-                console.warn('[BazaarQuickPricer] Failed to find bazaar container after 5s');
+                clearTimeout(giveUpTimer);
+                initScript(found);
             }
-        }, 100);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        const giveUpTimer = setTimeout(() => {
+            if (!isScriptInitialized) {
+                observer.disconnect();
+                console.warn(`[BazaarQuickPricer] Bazaar container not found after ${ROOT_WAIT_TIMEOUT_MS / 1000}s — giving up`);
+            }
+        }, ROOT_WAIT_TIMEOUT_MS);
     }
 
     init();
