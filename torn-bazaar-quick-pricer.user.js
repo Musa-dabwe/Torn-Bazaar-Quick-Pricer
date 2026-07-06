@@ -46,33 +46,89 @@
         return Math.min(Math.max(n, 0), 99.9);
     }
 
+    // In-memory settings cache: storage is hit once per key, then reads stay in
+    // memory (hot paths read settings once per item) and writes go through to
+    // GM_setValue immediately.
+    const settingsCache = {};
+    function getSetting(name, def) {
+        if (!(name in settingsCache)) settingsCache[name] = GM_getValue(name, def);
+        return settingsCache[name];
+    }
+    function setSetting(name, val) {
+        settingsCache[name] = val;
+        GM_setValue(name, val);
+    }
+
+    // Torn PDA key injection — runs once at startup, before any settings read.
+    // NOTE: this literal is the ONLY occurrence of the PDA placeholder in the whole
+    // file. Torn PDA's script manager does a global find/replace of every occurrence
+    // of the placeholder token in the source with the real key before running it — so
+    // if the token appears anywhere else (even in a comment or a comparison), that
+    // text gets rewritten too and silently breaks. Validate by format instead, never
+    // by string equality against the token itself.
+    (function persistInjectedPdaKey() {
+        const injected = '###PDA-APIKEY###';
+        if (isValidApiKey(injected) && injected !== GM_getValue('tornApiKey', '')) {
+            GM_setValue('tornApiKey', injected); // persist so it survives even without re-injection
+        }
+    })();
+
     const CONFIG = {
-        get defaultDiscount() { return GM_getValue('discountPercent', 0); },
-        set defaultDiscount(val) { GM_setValue('discountPercent', val); },
+        get defaultDiscount() { return getSetting('discountPercent', 0); },
+        set defaultDiscount(val) { setSetting('discountPercent', val); },
         get apiKey() {
-            // NOTE: this literal is the ONLY occurrence of the PDA placeholder in the whole
-            // file. Torn PDA's script manager does a global find/replace of every occurrence
-            // of the placeholder token in the source with the real key before running it — so
-            // if the token appears anywhere else (even in a comment or a comparison), that
-            // text gets rewritten too and silently breaks. Validate by format instead, never
-            // by string equality against the token itself.
-            const injected = '###PDA-APIKEY###';
-            const stored = GM_getValue('tornApiKey', '');
-            if (isValidApiKey(injected) && injected !== stored) {
-                GM_setValue('tornApiKey', injected); // persist so it survives even without re-injection
-                return injected;
-            }
-            return isValidApiKey(stored) ? stored : '';
+            const k = getSetting('tornApiKey', '');
+            return isValidApiKey(k) ? k : '';
         },
-        set apiKey(val) { GM_setValue('tornApiKey', val); },
-        get priceCache() { return GM_getValue('priceCache', {}); },
-        set priceCache(val) { GM_setValue('priceCache', val); },
-        get disableNpcCheck() { return GM_getValue('disableNpcCheck', false); },
-        set disableNpcCheck(val) { GM_setValue('disableNpcCheck', val); },
-        get skipRwWeapons() { return GM_getValue('skipRwWeapons', true); },
-        set skipRwWeapons(val) { GM_setValue('skipRwWeapons', val); },
-        cacheTimeout: 5 * 60 * 1000
+        set apiKey(val) { setSetting('tornApiKey', val); },
+        get disableNpcCheck() { return getSetting('disableNpcCheck', false); },
+        set disableNpcCheck(val) { setSetting('disableNpcCheck', val); },
+        get skipRwWeapons() { return getSetting('skipRwWeapons', true); },
+        set skipRwWeapons(val) { setSetting('skipRwWeapons', val); },
+        get cacheTimeoutMin() { return getSetting('cacheTimeoutMin', 5); },
+        set cacheTimeoutMin(val) { setSetting('cacheTimeoutMin', val); },
+        get cacheTimeout() { return Math.max(1, this.cacheTimeoutMin) * 60 * 1000; }
     };
+
+    // =====================================================================
+    // PRICE CACHE  (in-memory copy of the persisted cache; stale entries are
+    // pruned at startup and writes are debounced into a single GM_setValue so
+    // batch runs don't re-serialize the whole object once per item)
+    // =====================================================================
+
+    let priceCache = GM_getValue('priceCache', {});
+    let priceCachePersistTimer = null;
+
+    (function pruneStalePrices() {
+        const now = Date.now();
+        let dirty = false;
+        for (const id of Object.keys(priceCache)) {
+            const entry = priceCache[id];
+            if (!entry || !entry.timestamp || now - entry.timestamp >= CONFIG.cacheTimeout) {
+                delete priceCache[id];
+                dirty = true;
+            }
+        }
+        if (dirty) GM_setValue('priceCache', priceCache);
+    })();
+
+    function cachePrice(itemId, marketValue, sellPrice) {
+        priceCache[itemId] = { marketValue, sellPrice, timestamp: Date.now() };
+        clearTimeout(priceCachePersistTimer);
+        priceCachePersistTimer = setTimeout(() => GM_setValue('priceCache', priceCache), 500);
+    }
+
+    function getCachedPrice(itemId) {
+        const entry = priceCache[itemId];
+        if (entry && entry.timestamp && Date.now() - entry.timestamp < CONFIG.cacheTimeout) return entry;
+        return null;
+    }
+
+    function clearPriceCache() {
+        priceCache = {};
+        clearTimeout(priceCachePersistTimer);
+        GM_setValue('priceCache', priceCache);
+    }
 
     // =====================================================================
     // RW WEAPON DETECTION
@@ -602,7 +658,7 @@
         };
 
         overlay.querySelector('#qpClearCache').onclick = () => {
-            CONFIG.priceCache = {};
+            clearPriceCache();
             const btn = overlay.querySelector('#qpClearCache');
             btn.textContent = 'CLEARED';
             setTimeout(() => { btn.textContent = 'CLEAR CACHE'; }, 1500);
@@ -655,60 +711,122 @@
     // API REQUEST QUEUE
     // =====================================================================
 
-    const requestQueue = [];
+    const requestQueue = [];            // { itemId, retries } waiting to be fetched
+    const pendingRequests = new Map();  // itemId -> callback[] (queued or in flight)
     let isProcessingQueue = false;
+    let queueHalted = false;            // set when a fatal API error stops the run
+
+    const REQUEST_SPACING_MS = 600;         // ≤100 req/min, Torn's documented limit
+    const REQUEST_TIMEOUT_MS = 15000;
+    const RATE_LIMIT_RETRY_DELAY_MS = 5000;
+    const RATE_LIMIT_MAX_RETRIES = 2;
+
+    // Torn API error codes that make every further request pointless this run.
+    const FATAL_API_ERRORS = {
+        2: 'Incorrect API key — please re-enter it in Settings.',
+        8: 'Your IP is temporarily blocked by the Torn API.',
+        9: 'The Torn API is currently disabled.'
+    };
+
+    function notifyApiError(message) {
+        alert(message);
+    }
+
+    function finishRequest(itemId, result) {
+        const callbacks = pendingRequests.get(itemId) || [];
+        pendingRequests.delete(itemId);
+        callbacks.forEach(cb => cb(result));
+    }
+
+    function failAllPending() {
+        requestQueue.length = 0;
+        const ids = Array.from(pendingRequests.keys());
+        ids.forEach(id => finishRequest(id, { marketValue: 0, sellPrice: 0 }));
+        isProcessingQueue = false;
+    }
 
     function processRequestQueue() {
         if (isProcessingQueue || requestQueue.length === 0) return;
+        if (queueHalted) { failAllPending(); return; }
         isProcessingQueue = true;
-        const { itemId, callback } = requestQueue.shift();
+        const { itemId, retries } = requestQueue.shift();
+
+        const releaseAndContinue = (delay) => {
+            isProcessingQueue = false;
+            setTimeout(processRequestQueue, delay);
+        };
+        const failItem = () => {
+            finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
+            releaseAndContinue(REQUEST_SPACING_MS);
+        };
 
         GM_xmlhttpRequest({
             method: 'GET',
             url: `https://api.torn.com/torn/${itemId}?selections=items&key=${CONFIG.apiKey}`,
+            timeout: REQUEST_TIMEOUT_MS,
             onload: function(response) {
                 try {
                     const data = JSON.parse(response.responseText);
                     if (data.error) {
-                        if (data.error.code === 2) {
-                            alert('Incorrect API Key!');
-                            CONFIG.apiKey = '';
+                        const code = data.error.code;
+                        if (FATAL_API_ERRORS[code]) {
+                            if (code === 2) CONFIG.apiKey = '';
+                            queueHalted = true;
+                            notifyApiError(FATAL_API_ERRORS[code]);
+                            finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
+                            failAllPending();
+                            return;
                         }
-                        callback({ marketValue: 0, sellPrice: 0 });
+                        if (code === 5 && retries < RATE_LIMIT_MAX_RETRIES) {
+                            console.warn('[BazaarQuickPricer] Rate limited, backing off...');
+                            requestQueue.unshift({ itemId, retries: retries + 1 });
+                            releaseAndContinue(RATE_LIMIT_RETRY_DELAY_MS);
+                            return;
+                        }
+                        console.warn(`[BazaarQuickPricer] API error ${code}: ${data.error.error}`);
+                        failItem();
                     } else if (data.items?.[itemId]) {
                         const itemData = data.items[itemId];
                         const marketValue = itemData.market_value || 0;
                         const sellPrice = itemData.sell_price || 0;
-                        const cache = CONFIG.priceCache;
-                        cache[itemId] = { marketValue, sellPrice, timestamp: Date.now() };
-                        CONFIG.priceCache = cache;
-                        callback({ marketValue, sellPrice });
+                        cachePrice(itemId, marketValue, sellPrice);
+                        finishRequest(itemId, { marketValue, sellPrice });
+                        releaseAndContinue(REQUEST_SPACING_MS);
                     } else {
-                        callback({ marketValue: 0, sellPrice: 0 });
+                        failItem();
                     }
                 } catch (e) {
                     console.error('[BazaarQuickPricer] Parse error:', e);
-                    callback({ marketValue: 0, sellPrice: 0 });
+                    failItem();
                 }
-                isProcessingQueue = false;
-                setTimeout(processRequestQueue, 300);
             },
-            onerror: function() {
-                callback({ marketValue: 0, sellPrice: 0 });
-                isProcessingQueue = false;
-                setTimeout(processRequestQueue, 300);
-            }
+            onerror: failItem,
+            ontimeout: function() {
+                console.warn(`[BazaarQuickPricer] Request for item ${itemId} timed out`);
+                failItem();
+            },
+            onabort: failItem
         });
     }
 
     function fetchItemData(itemId, callback) {
-        const now = Date.now();
-        const cached = CONFIG.priceCache[itemId];
-        if (cached && cached.timestamp && (now - cached.timestamp < CONFIG.cacheTimeout)) {
+        const cached = getCachedPrice(itemId);
+        if (cached) {
             callback({ marketValue: cached.marketValue, sellPrice: cached.sellPrice });
             return;
         }
-        requestQueue.push({ itemId, callback });
+        // Dedupe: if this item is already queued or in flight, piggyback on it.
+        if (pendingRequests.has(itemId)) {
+            pendingRequests.get(itemId).push(callback);
+            return;
+        }
+        // A halted queue gets a fresh chance once the previous run has fully drained
+        // (e.g. the user fixed their API key in Settings).
+        if (queueHalted && requestQueue.length === 0 && pendingRequests.size === 0) {
+            queueHalted = false;
+        }
+        pendingRequests.set(itemId, [callback]);
+        requestQueue.push({ itemId, retries: 0 });
         processRequestQueue();
     }
 

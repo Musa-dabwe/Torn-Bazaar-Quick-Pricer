@@ -13,7 +13,7 @@ Line references point at `script-v2_8_9.js`.
 
 ## 1. Critical bugs & correctness (P1)
 
-- [ ] **1.1 — Add `ontimeout` / `onabort` handling to the API request queue.**
+- [x] **1.1 — Add `ontimeout` / `onabort` handling to the API request queue.** *(Done in v2.9: 15 s timeout + both handlers release the queue.)*
   `GM_xmlhttpRequest` (lines 655–692) only wires `onload` and `onerror`. If a request
   hangs or is aborted, `isProcessingQueue` stays `true` forever and every queued item
   silently never resolves — the whole script's pricing stops until a page reload.
@@ -41,14 +41,14 @@ Line references point at `script-v2_8_9.js`.
   Extract one `isValidApiKey()` helper and use it at all three sites, with user
   feedback on rejection.
 
-- [ ] **1.5 — Handle Torn API error codes beyond "incorrect key".**
+- [x] **1.5 — Handle Torn API error codes beyond "incorrect key".** *(Done in v2.9: code 5 backs off and retries; codes 2/8/9 halt the queue with one notification; others logged and failed per item.)*
   Only `error.code === 2` is handled (line 662). Code 5 (rate limit) — the most likely
   error during "Update All" on a large bazaar — is treated as a generic failure with no
   backoff and no message, so items silently price to nothing. Handle at least: 5
   (back off and retry), 8/9 (IP block / API disabled — stop the queue and tell the
   user), and surface unknown codes in the UI rather than only `console`.
 
-- [ ] **1.6 — Fix the repeated "Incorrect API Key!" alert storm.**
+- [x] **1.6 — Fix the repeated "Incorrect API Key!" alert storm.** *(Done in v2.9: fatal errors flush the queue and notify once.)*
   When the key is bad and N items are queued, the code alerts once per queued request
   (line 663) because the queue keeps draining after the key is cleared. On a bad key,
   flush the remaining queue and alert once.
@@ -68,7 +68,7 @@ Line references point at `script-v2_8_9.js`.
   mid-batch. Refactor `updateManageItemPrice` to return a Promise that resolves with
   a success/skip/fail status, await it, and report real numbers.
 
-- [ ] **1.9 — Dedupe in-flight requests for the same item.**
+- [x] **1.9 — Dedupe in-flight requests for the same item.** *(Done in v2.9: `pendingRequests` map; extra callbacks piggyback.)*
   `fetchItemData()` (line 695) checks the cache but not the queue: several visible
   stacks of the same item queue several identical API calls. Track pending item IDs
   and attach additional callbacks to the in-flight request instead of re-queueing.
@@ -131,7 +131,7 @@ Line references point at `script-v2_8_9.js`.
   saved on a large monitor restores off-screen on a phone until the next `resize`
   event fires. Run the saved position through `clampChipPosition()` on restore.
 
-- [ ] **3.5 — Respect Torn's API rate limit in the queue.**
+- [x] **3.5 — Respect Torn's API rate limit in the queue.** *(Done in v2.9: 600 ms spacing + code-5 backoff.)*
   The queue spaces requests 300 ms apart (line 685) ≈ 200 req/min, double Torn's
   100 req/min limit; large "Update All" runs will hit code-5 errors. Either raise the
   spacing to ≥ 600 ms, or implement adaptive backoff on error code 5 (pairs with 1.5).
@@ -147,7 +147,7 @@ Line references point at `script-v2_8_9.js`.
   Show a brief error state on the button (e.g. red flash + title text) when pricing
   fails.
 
-- [ ] **3.8 — Cap / prune the persisted price cache.**
+- [x] **3.8 — Cap / prune the persisted price cache.** *(Done in v2.9: stale entries pruned at startup; writes debounced into one `GM_setValue`.)*
   `priceCache` (line 56) only ever grows; every write serializes the entire object
   through `GM_setValue` once per priced item (O(n²) during batch runs). Prune entries
   older than `cacheTimeout` on startup, and batch cache writes during
@@ -203,7 +203,7 @@ Line references point at `script-v2_8_9.js`.
   The show/hide-key toggle is implemented twice, identically, in `showApiKeyPrompt()`
   and `showSettingsPanel()` (lines 515–519, 593–597). Extract `wireEyeToggle(overlay)`.
 
-- [ ] **5.5 — Reduce repeated `GM_getValue` deserialization in CONFIG getters.**
+- [x] **5.5 — Reduce repeated `GM_getValue` deserialization in CONFIG getters.** *(Done in v2.9: in-memory `settingsCache` with write-through setters; price cache held in memory.)*
   Every `CONFIG.priceCache` / `CONFIG.skipRwWeapons` read hits storage (and for the
   cache, deserializes the whole object). In hot paths (`fetchItemData` per item) this
   is wasteful. Cache reads in memory and write through on set.
