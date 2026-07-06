@@ -60,7 +60,7 @@ Line references point at `script-v2_8_9.js`.
   Clamp to a sane range (e.g. 0–99.9) on save and/or in the calculation, and add
   `min`/`max` attributes to the input (line 555).
 
-- [ ] **1.8 — Make `updateAllManagePrices()` actually await each update.**
+- [x] **1.8 — Make `updateAllManagePrices()` actually await each update.** *(Done in v2.9: promise-based with `'updated'|'declined'|'failed'` statuses and real counts.)*
   The loop (lines 945–948) fires `updateManageItemPrice()` (async via callback) and
   then just waits a fixed 350 ms. Slow API responses overlap with the next item, the
   final "Updated N item prices!" counts *attempts* rather than successes (declined
@@ -73,7 +73,7 @@ Line references point at `script-v2_8_9.js`.
   stacks of the same item queue several identical API calls. Track pending item IDs
   and attach additional callbacks to the in-flight request instead of re-queueing.
 
-- [ ] **1.10 — Don't leave the script dead when the API-key prompt is dismissed.**
+- [x] **1.10 — Don't leave the script dead when the API-key prompt is dismissed.** *(Done in v2.9: full init always; actions prompt for a key on demand.)*
   If there's no key, `initScript()` shows the prompt and returns (line 1197) without
   creating the chip or observer. If the user cancels the prompt, the script is inert
   until a full reload with no way to reopen settings. Create the chip regardless and
@@ -126,7 +126,7 @@ Line references point at `script-v2_8_9.js`.
   accumulate. Keep references and add a small teardown path (or a guard against
   double-injection at the top of the IIFE).
 
-- [ ] **3.4 — Clamp the restored chip position to the current viewport.**
+- [x] **3.4 — Clamp the restored chip position to the current viewport.** *(Done in v2.9.)*
   `applyChipPosition()` (line 978) restores the saved coordinates verbatim. A position
   saved on a large monitor restores off-screen on a phone until the next `resize`
   event fires. Run the saved position through `clampChipPosition()` on restore.
@@ -141,7 +141,7 @@ Line references point at `script-v2_8_9.js`.
   legitimately contain `x<digits>`. Anchor the match to the known quantity markup or
   the end of the string (e.g. `/\bx(\d+)\s*$/i`).
 
-- [ ] **3.7 — Surface fetch failures to the user in the Add-items flow.**
+- [x] **3.7 — Surface fetch failures to the user in the Add-items flow.** *(Done in v2.9: red flash + retry hint on the button.)*
   In `fillItemPrice()` a failed fetch resolves silently with `marketValue: 0`
   (lines 754–781): the button un-disables and nothing happens, with no explanation.
   Show a brief error state on the button (e.g. red flash + title text) when pricing
@@ -155,24 +155,24 @@ Line references point at `script-v2_8_9.js`.
 
 ## 4. UX & accessibility (P2–P3)
 
-- [ ] **4.1 — Replace blocking `alert()`/`confirm()` with in-page UI.** (P2)
+- [x] **4.1 — Replace blocking `alert()`/`confirm()` with in-page UI.** (P2) *(Done in v2.9: `qpToast` + async `qpConfirm`; zero native dialogs left.)*
   Nine call sites use native dialogs. They freeze batch runs (see 1.8), look jarring
   inside Torn, and on PDA render as OS dialogs. Build a small toast + confirm
   component in the existing modal style.
 
-- [ ] **4.2 — Avoid full `location.reload()` after saving the first API key.** (P3)
+- [x] **4.2 — Avoid full `location.reload()` after saving the first API key.** (P3) *(Done in v2.9.)*
   Line 526 reloads the page; the script could simply proceed to `initScript()`.
 
-- [ ] **4.3 — Add keyboard & screen-reader accessibility to the modals and chip.** (P3)
+- [x] **4.3 — Add keyboard & screen-reader accessibility to the modals and chip.** (P3) *(Done in v2.9: aria-labels, `role="dialog"`/`aria-modal`, Escape close, Tab trap, arrow-key chip movement.)*
   Icon-only buttons (gear, refresh, add, eye toggle) have `title` but no
   `aria-label`; the overlays have no focus trap, no `role="dialog"`, and don't close
   on Escape; the drag grip isn't keyboard-operable.
 
-- [ ] **4.4 — Show progress during batch runs.** (P3)
+- [x] **4.4 — Show progress during batch runs.** (P3) *(Done in v2.9: "Updating 12/50" / "Filling 12/50" on the chip.)*
   "Updating…" / "Filling…" is all the feedback there is. With 50+ items a run takes
   30+ seconds; show a counter ("12/50") on the chip button.
 
-- [ ] **4.5 — Make `cacheTimeout` a visible setting.** (P3)
+- [x] **4.5 — Make `cacheTimeout` a visible setting.** (P3) *(Done in v2.9: "CACHE (MIN)" field, 1–120 minutes.)*
   The 5-minute cache (line 64) is invisible to users, who may believe "Update All"
   re-fetched live prices when it served cached ones. Either expose it in settings or
   show a "prices as of…" hint.
@@ -199,7 +199,7 @@ Line references point at `script-v2_8_9.js`.
   the RW confirm message string is duplicated verbatim. Extract shared helpers
   (`buildRwBadge()`, `confirmRwPricing()`).
 
-- [ ] **5.4 — Deduplicate the eye-toggle wiring.**
+- [x] **5.4 — Deduplicate the eye-toggle wiring.** *(Done in v2.9: shared `wireEyeToggle()`, now keyboard-operable too.)*
   The show/hide-key toggle is implemented twice, identically, in `showApiKeyPrompt()`
   and `showSettingsPanel()` (lines 515–519, 593–597). Extract `wireEyeToggle(overlay)`.
 

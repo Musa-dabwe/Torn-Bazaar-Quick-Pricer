@@ -190,6 +190,14 @@
         return `${rarity} ${bonus} RW weapon`;
     }
 
+    /** Shared "price an RW weapon anyway?" dialog. @returns {Promise<boolean>} */
+    function confirmRwPricing(rwInfo) {
+        return qpConfirm(
+            `This appears to be a ${rwSkipLabel(rwInfo)}.\nRW weapons have unique pricing not based on standard market value.\n\nPrice it anyway using the base item's market value?`,
+            { title: 'RW WEAPON DETECTED', confirmText: 'PRICE IT' }
+        );
+    }
+
     // =====================================================================
     // STATE
     // =====================================================================
@@ -508,6 +516,35 @@
             width: 34px; height: 34px; padding: 0 !important;
             display: flex; align-items: center; justify-content: center;
         }
+
+        /* ── TOASTS + CONFIRM DIALOG ── */
+        .qp-toast-wrap {
+            position: fixed;
+            bottom: 70px; left: 50%;
+            transform: translateX(-50%);
+            z-index: 100000;
+            display: flex; flex-direction: column; gap: 6px; align-items: center;
+            pointer-events: none;
+        }
+        .qp-toast {
+            background: #14140f;
+            color: #c8f5cf;
+            border: 1px solid #545454;
+            padding: 8px 14px;
+            font-size: 12px;
+            font-family: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            max-width: 90vw;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+        }
+        .qp-toast-error { color: #ffb3ad; border-color: #b3271e; }
+        .qp-toast-success { border-color: #0a7a3d; }
+        .qp-confirm-text {
+            margin: 0;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-line;
+            color: var(--text);
+        }
     `;
     document.head.appendChild(style);
 
@@ -535,6 +572,88 @@
         checkbox.addEventListener('change', sync);
     }
 
+    /** Show/hide toggle for the API key input (click or Enter/Space). */
+    function wireEyeToggle(overlay, apiInput) {
+        const eyeToggle = overlay.querySelector('#qpEyeToggle');
+        const flip = () => {
+            const isPass = apiInput.type === 'password';
+            apiInput.type = isPass ? 'text' : 'password';
+            eyeToggle.innerHTML = isPass ? eyeOffSVG : eyeSVG;
+        };
+        eyeToggle.addEventListener('click', flip);
+        eyeToggle.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
+        });
+    }
+
+    /** Dialog accessibility: role/aria attributes, Escape to close, Tab focus trap. */
+    function wireOverlayA11y(overlay, onClose) {
+        const modal = overlay.querySelector('.qp-modal');
+        modal.setAttribute('role', 'dialog');
+        modal.setAttribute('aria-modal', 'true');
+        overlay.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
+            if (e.key !== 'Tab') return;
+            const focusables = overlay.querySelectorAll('button, input, a[href], [tabindex]:not([tabindex="-1"])');
+            if (focusables.length === 0) return;
+            const first = focusables[0];
+            const last = focusables[focusables.length - 1];
+            if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+            else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+        });
+    }
+
+    let toastWrap = null;
+
+    /** Non-blocking notification. @param {'info'|'success'|'error'} kind */
+    function qpToast(message, kind = 'info', duration = 4000) {
+        if (!toastWrap || !document.body.contains(toastWrap)) {
+            toastWrap = document.createElement('div');
+            toastWrap.className = 'qp-toast-wrap';
+            document.body.appendChild(toastWrap);
+        }
+        const toast = document.createElement('div');
+        toast.className = `qp-toast qp-toast-${kind}`;
+        toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        toast.textContent = message;
+        toastWrap.appendChild(toast);
+        setTimeout(() => toast.remove(), duration);
+    }
+
+    /**
+     * Non-blocking replacement for window.confirm, styled like the settings modal.
+     * @returns {Promise<boolean>} true if the user confirmed
+     */
+    function qpConfirm(message, opts = {}) {
+        return new Promise((resolve) => {
+            const overlay = document.createElement('div');
+            overlay.className = 'qp-overlay';
+            overlay.innerHTML = `
+                <div class="qp-modal">
+                    <header class="qp-header">
+                        <h1>${opts.title || 'CONFIRM'}<span class="qp-cursor"></span></h1>
+                        <div class="qp-gold-rule"></div>
+                    </header>
+                    <div class="qp-body"><p class="qp-confirm-text"></p></div>
+                    <div class="qp-footer">
+                        <div class="qp-buttons">
+                            <button class="qp-btn-auth" data-qp="ok">${opts.confirmText || 'CONFIRM'}</button>
+                            <button class="qp-btn-abort" data-qp="cancel">CANCEL</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            overlay.querySelector('.qp-confirm-text').textContent = message;
+            document.body.appendChild(overlay);
+            const done = (val) => { overlay.remove(); resolve(val); };
+            overlay.querySelector('[data-qp="ok"]').onclick = () => done(true);
+            overlay.querySelector('[data-qp="cancel"]').onclick = () => done(false);
+            overlay.onclick = (e) => { if (e.target === overlay) done(false); };
+            wireOverlayA11y(overlay, () => done(false));
+            overlay.querySelector('[data-qp="ok"]').focus();
+        });
+    }
+
     // =====================================================================
     // UI — API KEY PROMPT  (kept minimal / unchanged)
     // =====================================================================
@@ -553,8 +672,8 @@
                     <div class="qp-card">
                         <label>API KEY</label>
                         <div class="qp-input-wrap">
-                            <input type="password" id="qpApiKey" placeholder="ENTER KEY" />
-                            <div class="qp-eye-toggle" id="qpEyeToggle">${eyeSVG}</div>
+                            <input type="password" id="qpApiKey" placeholder="ENTER KEY" aria-label="Torn API key" />
+                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
                 </div>
@@ -569,25 +688,24 @@
         document.body.appendChild(overlay);
 
         const apiInput = overlay.querySelector('#qpApiKey');
-        const eyeToggle = overlay.querySelector('#qpEyeToggle');
-        eyeToggle.onclick = () => {
-            const isPass = apiInput.type === 'password';
-            apiInput.type = isPass ? 'text' : 'password';
-            eyeToggle.innerHTML = isPass ? eyeOffSVG : eyeSVG;
-        };
+        wireEyeToggle(overlay, apiInput);
 
         overlay.querySelector('#qpSave').onclick = () => {
             const key = apiInput.value.trim();
             if (isValidApiKey(key)) {
                 CONFIG.apiKey = key;
                 overlay.remove();
-                location.reload();
+                // No reload needed: the chip, observer, and item buttons are already
+                // wired up; the queue simply starts working once a key exists.
+                qpToast('API key saved', 'success');
             } else {
-                alert('Please enter a valid 16-character alphanumeric API key');
+                qpToast('Please enter a valid 16-character alphanumeric API key', 'error');
             }
         };
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        wireOverlayA11y(overlay, () => overlay.remove());
+        apiInput.focus();
     }
 
     function showSettingsPanel() {
@@ -604,13 +722,17 @@
                     <div class="qp-card">
                         <label>API KEY</label>
                         <div class="qp-input-wrap">
-                            <input type="password" id="qpApiKey" />
-                            <div class="qp-eye-toggle" id="qpEyeToggle">${eyeSVG}</div>
+                            <input type="password" id="qpApiKey" aria-label="Torn API key" />
+                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
                     <div class="qp-card">
                         <label>DISCOUNT %</label>
-                        <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" />
+                        <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" aria-label="Discount percent" />
+                    </div>
+                    <div class="qp-card">
+                        <label>CACHE (MIN)</label>
+                        <input type="number" id="qpCacheMin" value="${CONFIG.cacheTimeoutMin}" step="1" min="1" max="120" aria-label="Price cache lifetime in minutes" />
                     </div>
                     <div class="qp-toggles-card">
                         <div class="qp-toggle-row">
@@ -650,12 +772,7 @@
         // Set via DOM, never string-interpolated into HTML: a malformed stored value
         // containing quotes must not be able to break out of the attribute.
         apiInput.value = CONFIG.apiKey;
-        const eyeToggle = overlay.querySelector('#qpEyeToggle');
-        eyeToggle.onclick = () => {
-            const isPass = apiInput.type === 'password';
-            apiInput.type = isPass ? 'text' : 'password';
-            eyeToggle.innerHTML = isPass ? eyeOffSVG : eyeSVG;
-        };
+        wireEyeToggle(overlay, apiInput);
 
         overlay.querySelector('#qpClearCache').onclick = () => {
             clearPriceCache();
@@ -667,18 +784,22 @@
         overlay.querySelector('#qpSave').onclick = () => {
             const key = apiInput.value.trim();
             if (key !== '' && !isValidApiKey(key)) {
-                alert('API key must be 16 alphanumeric characters (leave empty to clear it)');
+                qpToast('API key must be 16 alphanumeric characters (leave empty to clear it)', 'error');
                 return;
             }
             CONFIG.defaultDiscount = clampDiscount(overlay.querySelector('#qpDiscount').value);
             CONFIG.apiKey = key;
             CONFIG.disableNpcCheck = !overlay.querySelector('#qpNpcCheck').checked;
             CONFIG.skipRwWeapons = overlay.querySelector('#qpRwCheck').checked;
+            CONFIG.cacheTimeoutMin = Math.min(Math.max(parseInt(overlay.querySelector('#qpCacheMin').value, 10) || 5, 1), 120);
             overlay.remove();
+            qpToast('Settings saved', 'success');
         };
 
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+        wireOverlayA11y(overlay, () => overlay.remove());
+        apiInput.focus();
     }
 
     // =====================================================================
@@ -729,7 +850,7 @@
     };
 
     function notifyApiError(message) {
-        alert(message);
+        qpToast(message, 'error', 6000);
     }
 
     function finishRequest(itemId, result) {
@@ -902,6 +1023,20 @@
                     }
                     const btn = itemElement.querySelector('.quick-price-btn button');
                     if (btn) { btn.classList.add('qp-btn-red'); btn.dataset.mode = 'undo'; }
+                } else {
+                    // Surface the failure on the button instead of silently doing nothing.
+                    const btn = itemElement.querySelector('.quick-price-btn button');
+                    if (btn && btn.dataset.mode !== 'undo') {
+                        const prevTitle = btn.title;
+                        btn.classList.add('qp-btn-red');
+                        btn.title = 'Price fetch failed — click to retry';
+                        setTimeout(() => {
+                            if (btn.dataset.mode !== 'undo') {
+                                btn.classList.remove('qp-btn-red');
+                                btn.title = prevTitle;
+                            }
+                        }, 2500);
+                    }
                 }
                 resolve();
             });
@@ -929,25 +1064,36 @@
     // MANAGE ITEMS PAGE
     // =====================================================================
 
+    /**
+     * Fetch the market price for one manage-page item and write it into the input.
+     * @returns {Promise<'updated'|'declined'|'failed'>} what actually happened, so
+     *          batch runs can report real counts instead of attempts.
+     */
     function updateManageItemPrice(priceDiv, itemId) {
-        const priceInput = priceDiv.querySelector('input.input-money, input');
-        if (!priceInput) return;
-        const currentPrice = parseInt(priceInput.value.replace(/,/g, '')) || 0;
-        priceInput.disabled = true;
-        priceInput.style.opacity = '0.5';
-        fetchItemData(itemId, ({ marketValue, sellPrice }) => {
-            priceInput.disabled = false;
-            priceInput.style.opacity = '1';
-            if (marketValue > 0) {
+        return new Promise((resolve) => {
+            const priceInput = priceDiv.querySelector('input.input-money, input');
+            if (!priceInput) { resolve('failed'); return; }
+            const currentPrice = parseInt(priceInput.value.replace(/,/g, ''), 10) || 0;
+            priceInput.disabled = true;
+            priceInput.style.opacity = '0.5';
+            fetchItemData(itemId, async ({ marketValue, sellPrice }) => {
+                priceInput.disabled = false;
+                priceInput.style.opacity = '1';
+                if (marketValue <= 0) {
+                    qpToast('Could not fetch price for this item', 'error');
+                    resolve('failed');
+                    return;
+                }
                 const newPrice = calculateFinalPrice(marketValue, sellPrice, CONFIG.defaultDiscount);
                 const priceDiff = Math.abs(newPrice - currentPrice);
                 const percentDiff = currentPrice > 0 ? (priceDiff / currentPrice) * 100 : 100;
                 if (percentDiff > 20 && currentPrice > 0) {
                     const direction = newPrice > currentPrice ? 'increase' : 'decrease';
-                    const confirmed = confirm(
-                        `Price ${direction} detected!\n\nCurrent: $${currentPrice.toLocaleString()}\nNew: $${newPrice.toLocaleString()}\nDifference: ${percentDiff.toFixed(1)}%\n\nUpdate to new price?`
+                    const confirmed = await qpConfirm(
+                        `Price ${direction} detected!\n\nCurrent: $${currentPrice.toLocaleString()}\nNew: $${newPrice.toLocaleString()}\nDifference: ${percentDiff.toFixed(1)}%\n\nUpdate to new price?`,
+                        { title: 'PRICE CHECK', confirmText: 'UPDATE' }
                     );
-                    if (!confirmed) return;
+                    if (!confirmed) { resolve('declined'); return; }
                 }
                 priceInput.value = newPrice;
                 priceInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -955,9 +1101,8 @@
                 const borderColor = (sellPrice > 0 && newPrice === sellPrice) ? '#ff9800' : '#5F5F5F';
                 priceInput.style.border = `2px solid ${borderColor}`;
                 setTimeout(() => priceInput.style.border = '', 1000);
-            } else {
-                alert('Could not fetch price for this item');
-            }
+                resolve('updated');
+            });
         });
     }
 
@@ -999,15 +1144,11 @@
         priceDiv.style.alignItems = 'center';
         priceDiv.appendChild(btnContainer);
 
-        btnInput.addEventListener('click', function(event) {
+        btnInput.addEventListener('click', async function(event) {
             event.stopPropagation();
             event.preventDefault();
-            if (rwInfo.isRanked) {
-                const confirmed = confirm(
-                    `⚠️ RW Weapon Detected\n\nThis appears to be a ${rwSkipLabel(rwInfo)}.\nRW weapons have unique pricing not based on standard market value.\n\nPrice it anyway using the base item's market value?`
-                );
-                if (!confirmed) return;
-            }
+            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+            if (rwInfo.isRanked && !(await confirmRwPricing(rwInfo))) return;
             updateManageItemPrice(priceDiv, itemId);
         });
     }
@@ -1044,31 +1185,37 @@
 
     async function updateAllManagePrices() {
         const items = getManageItems();
-        if (items.length === 0) { alert('No items found to update!'); return; }
+        if (items.length === 0) { qpToast('No items found to update!', 'error'); return; }
         const updateButton = chipFillBtn;
-        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; updateButton.textContent = 'Updating...'; }
-        let updated = 0, skippedRw = 0;
+        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; }
+
+        // Collect the actual work first so progress and totals are accurate.
+        let skippedRw = 0;
+        const work = [];
         for (const item of items) {
             const priceDiv = item.querySelector('div[class*="price"]');
             const image = item.querySelector('img');
-            if (priceDiv && image) {
-                const itemId = getItemIdFromImage(image);
-                if (itemId) {
-                    if (CONFIG.skipRwWeapons) {
-                        const rwInfo = getRWBonusInfo(item);
-                        if (rwInfo.isRanked) { skippedRw++; continue; }
-                    }
-                    await new Promise((resolve) => {
-                        updateManageItemPrice(priceDiv, itemId);
-                        setTimeout(resolve, 350);
-                    });
-                    updated++;
-                }
-            }
+            if (!priceDiv || !image) continue;
+            const itemId = getItemIdFromImage(image);
+            if (!itemId) continue;
+            if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; continue; }
+            work.push({ priceDiv, itemId });
         }
+
+        let updated = 0, failed = 0, done = 0;
+        for (const { priceDiv, itemId } of work) {
+            done++;
+            if (updateButton) updateButton.textContent = `Updating ${done}/${work.length}`;
+            const result = await updateManageItemPrice(priceDiv, itemId);
+            if (result === 'updated') updated++;
+            else if (result === 'failed') failed++;
+        }
+
         if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
-        const skipMsg = skippedRw > 0 ? `\n(${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped)` : '';
-        alert(`Updated ${updated} item prices!${skipMsg}`);
+        let msg = `Updated ${updated} of ${work.length} item price${work.length === 1 ? '' : 's'}`;
+        if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
+        if (failed > 0) msg += ` — ${failed} failed`;
+        qpToast(msg, failed > 0 ? 'error' : 'success', 6000);
     }
 
     // =====================================================================
@@ -1094,8 +1241,11 @@
     function applyChipPosition() {
         const pos = GM_getValue('chipPosition', null);
         if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-            chipEl.style.left = pos.x + 'px';
-            chipEl.style.top = pos.y + 'px';
+            // Clamp to the current viewport: a position saved on a large monitor
+            // must not restore off-screen on a phone.
+            const { x, y } = clampChipPosition(pos.x, pos.y);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
             chipEl.style.bottom = 'auto';
             chipEl.style.transform = 'none';
         }
@@ -1111,10 +1261,10 @@
         chipEl = document.createElement('div');
         chipEl.className = 'qp-chip';
         chipEl.innerHTML = `
-            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition">⋮⋮</div>
+            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">⋮⋮</div>
             <button class="qp-btn qp-chip-fill" id="qpChipFill">Quick Fill</button>
             <div class="qp-chip-divider"></div>
-            <button class="qp-btn qp-chip-gear" id="qpChipGear" title="Settings">${gearSVG}</button>
+            <button class="qp-btn qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${gearSVG}</button>
         `;
         document.body.appendChild(chipEl);
         chipFillBtn = chipEl.querySelector('#qpChipFill');
@@ -1127,6 +1277,7 @@
         });
 
         chipFillBtn.addEventListener('click', () => {
+            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
             if (chipContext === 'manage') updateAllManagePrices();
             else fillAllItems();
         });
@@ -1163,6 +1314,25 @@
         };
         grip.addEventListener('pointerup', endDrag);
         grip.addEventListener('pointercancel', endDrag);
+
+        // Keyboard repositioning for the grip (paired with its role="button")
+        grip.addEventListener('keydown', (e) => {
+            const step = 10;
+            let dx = 0, dy = 0;
+            if (e.key === 'ArrowLeft') dx = -step;
+            else if (e.key === 'ArrowRight') dx = step;
+            else if (e.key === 'ArrowUp') dy = -step;
+            else if (e.key === 'ArrowDown') dy = step;
+            else return;
+            e.preventDefault();
+            const rect = chipEl.getBoundingClientRect();
+            chipEl.style.bottom = 'auto';
+            chipEl.style.transform = 'none';
+            const { x, y } = clampChipPosition(rect.left + dx, rect.top + dy);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
+            GM_setValue('chipPosition', { x, y });
+        });
 
         window.addEventListener('resize', () => {
             if (!chipEl) return;
@@ -1238,7 +1408,7 @@
         descriptionCont.style.alignItems = 'center';
         descriptionCont.appendChild(btnContainer);
 
-        btnInput.addEventListener('click', function(event) {
+        btnInput.addEventListener('click', async function(event) {
             event.stopPropagation();
             if (btnInput.dataset.mode === 'undo') {
                 clearItemInputs(itemElement);
@@ -1246,12 +1416,8 @@
                 btnInput.dataset.mode = 'add';
                 return;
             }
-            if (rwInfo.isRanked) {
-                const confirmed = confirm(
-                    `⚠️ RW Weapon Detected\n\nThis appears to be a ${rwSkipLabel(rwInfo)}.\nRW weapons have unique pricing not based on standard market value.\n\nPrice it anyway using the base item's market value?`
-                );
-                if (!confirmed) return;
-            }
+            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+            if (rwInfo.isRanked && !(await confirmRwPricing(rwInfo))) return;
             btnInput.disabled = true;
             btnInput.style.opacity = '0.5';
             fillItemPrice(itemElement).then(() => { btnInput.disabled = false; btnInput.style.opacity = '1'; });
@@ -1260,20 +1426,24 @@
 
     async function fillAllItems() {
         const items = getVisibleItems();
-        if (items.length === 0) { alert('No items found to fill!'); return; }
+        if (items.length === 0) { qpToast('No items found to fill!', 'error'); return; }
         const fillButton = chipFillBtn;
         if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Filling...'; }
         let skippedRw = 0;
-        const promises = items.map(item => {
-            if (CONFIG.skipRwWeapons) {
-                const rwInfo = getRWBonusInfo(item);
-                if (rwInfo.isRanked) { skippedRw++; return Promise.resolve(); }
-            }
-            return fillItemPrice(item);
+        const toFill = items.filter(item => {
+            if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
+            return true;
         });
+        let completed = 0;
+        const promises = toFill.map(item => fillItemPrice(item).then(() => {
+            completed++;
+            if (fillButton) fillButton.textContent = `Filling ${completed}/${toFill.length}`;
+        }));
         await Promise.all(promises);
         if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
-        if (skippedRw > 0) console.log(`[BazaarQuickPricer] Skipped ${skippedRw} RW weapon(s)`);
+        let msg = `Filled ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
+        if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
+        qpToast(msg, 'success');
     }
 
     // =====================================================================
@@ -1310,12 +1480,15 @@
     }
 
     function initScript(bazaarRoot) {
-        if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+        // Full init regardless of key state: the chip and item buttons stay usable
+        // and simply prompt for a key when clicked, instead of the script going
+        // dead until a reload if the first-run prompt is dismissed.
         processAllItems();
         setupObserver(bazaarRoot);
         processManageItems();
         createFloatingChip();
         updateChipContext();
+        if (!CONFIG.apiKey) showApiKeyPrompt();
     }
 
     let isScriptInitialized = false;
