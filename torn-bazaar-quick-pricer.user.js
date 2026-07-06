@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.8.9
+// @version      2.9
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -11,6 +11,7 @@
 // @grant        GM_xmlhttpRequest
 // @connect      api.torn.com
 // @run-at       document-end
+// @noframes
 // @homepage     https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer
 // @supportURL   https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer/issues
 // @downloadURL https://update.greasyfork.org/scripts/558562/Torn%20Bazaar%20Quick%20Pricer.user.js
@@ -25,7 +26,9 @@
         return;
     }
 
-    console.log('[BazaarQuickPricer] v2.8.9 Starting (PDA optimized)...');
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9';
+
+    console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
     // =====================================================================
     // CONFIGURATION
@@ -51,16 +54,12 @@
             return isValidFormat(stored) ? stored : '';
         },
         set apiKey(val) { GM_setValue('tornApiKey', val); },
-        get lastPriceUpdate() { return GM_getValue('lastPriceUpdate', 0); },
-        set lastPriceUpdate(val) { GM_setValue('lastPriceUpdate', val); },
         get priceCache() { return GM_getValue('priceCache', {}); },
         set priceCache(val) { GM_setValue('priceCache', val); },
         get disableNpcCheck() { return GM_getValue('disableNpcCheck', false); },
         set disableNpcCheck(val) { GM_setValue('disableNpcCheck', val); },
         get skipRwWeapons() { return GM_getValue('skipRwWeapons', true); },
         set skipRwWeapons(val) { GM_setValue('skipRwWeapons', val); },
-        get profilePhoto() { return GM_getValue('profilePhoto', ''); },
-        set profilePhoto(val) { GM_setValue('profilePhoto', val); },
         cacheTimeout: 5 * 60 * 1000
     };
 
@@ -137,8 +136,6 @@
     // =====================================================================
     const style = document.createElement('style');
     style.textContent = `
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&display=swap');
-
         .qp-btn {
             background: #5F5F5F !important;
             color: white !important;
@@ -152,7 +149,7 @@
             padding: 5px;
             font-size: 13px;
             font-weight: 700;
-            font-family: 'Syne', sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
         }
         .qp-btn:hover { filter: brightness(0.8); }
         .qp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -185,8 +182,6 @@
         }
 
         /* ── TERMINAL MONO SETTINGS UI (light only) ── */
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-
         .qp-modal {
             --bg: #f4f4f0;
             --header-bg: #14140f;
@@ -205,7 +200,7 @@
             background: rgba(0,0,0,0.85);
             z-index: 99999;
             display: flex; align-items: center; justify-content: center;
-            font-family: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+            font-family: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
             padding: 20px 15px;
             box-sizing: border-box;
         }
@@ -287,7 +282,7 @@
             color: var(--text);
             font-size: 14px;
             font-weight: 500;
-            font-family: 'IBM Plex Mono', monospace;
+            font-family: inherit;
             outline: none;
             width: 100%;
         }
@@ -383,7 +378,7 @@
             background: transparent;
             border: 1px solid var(--border);
             color: var(--text);
-            font-family: 'IBM Plex Mono', monospace;
+            font-family: inherit;
             border-radius: 0 !important;
         }
         .qp-buttons button:hover { border-color: var(--accent); }
@@ -425,7 +420,7 @@
             padding: 5px;
             z-index: 99998;
             box-shadow: 0 6px 18px rgba(0,0,0,0.45);
-            font-family: 'Syne', sans-serif !important;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
             touch-action: none;
         }
         .qp-chip.qp-chip-dragging { opacity: 0.85; box-shadow: 0 10px 26px rgba(0,0,0,0.6); }
@@ -460,10 +455,6 @@
     const eyeOffSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
 
     const gearSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19.14,12.94c.04-.3,.06-.61,.06-.94s-.02-.64-.06-.94l2.03-1.58c.18-.14,.23-.41,.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39,.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24,0-.43,.17-.47,.41l-.36,2.54c-.59,.24-1.13,.57-1.62,.94l-2.39-.96c-.22-.08-.47,0-.59,.22l-1.92,3.32c-.12,.21-.08,.47,.12,.61l2.03,1.58c-.04,.3-.06,.62-.06,.94s.02,.64,.06,.94l-2.03,1.58c-.18,.14-.23,.41-.12,.61l1.92,3.32c.12,.22,.37,.29,.59,.22l2.39-.96c.5,.38,1.03,.7,1.62,.94l.36,2.54c.05,.24,.24,.41,.48,.41h3.84c.24,0,.44-.17,.47-.41l.36-2.54c.59-.24,1.13-.56,1.62-.94l2.39,.96c.22,.08,.47,0,.59-.22l1.92-3.32c.12-.22,.07-.47-.12-.61l-2.02-1.58Zm-7.14,2.44c-1.86,0-3.38-1.52-3.38-3.38s1.52-3.38,3.38-3.38,3.38,1.52,3.38,3.38-1.52,3.38-3.38,3.38Z"/></svg>`;
-
-    const isMobile = window.innerWidth <= 784;
-
-    function saveConfig() {} // no-op kept for compat
 
     // =====================================================================
     // UI HELPERS
@@ -578,7 +569,7 @@
                         <button class="qp-btn-abort" id="qpCancel">CLOSE</button>
                     </div>
                     <div class="qp-footer-meta">
-                        <span>v2.8.9</span>
+                        <span>v${VERSION}</span>
                         <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" class="qp-github">GitHub</a>
                     </div>
                 </div>
@@ -598,7 +589,6 @@
 
         overlay.querySelector('#qpClearCache').onclick = () => {
             CONFIG.priceCache = {};
-            CONFIG.lastPriceUpdate = 0;
             const btn = overlay.querySelector('#qpClearCache');
             btn.textContent = 'CLEARED';
             setTimeout(() => { btn.textContent = 'CLEAR CACHE'; }, 1500);
@@ -662,7 +652,6 @@
                         if (data.error.code === 2) {
                             alert('Incorrect API Key!');
                             CONFIG.apiKey = '';
-                            saveConfig();
                         }
                         callback({ marketValue: 0, sellPrice: 0 });
                     } else if (data.items?.[itemId]) {
@@ -672,7 +661,6 @@
                         const cache = CONFIG.priceCache;
                         cache[itemId] = { marketValue, sellPrice, timestamp: Date.now() };
                         CONFIG.priceCache = cache;
-                        CONFIG.lastPriceUpdate = Date.now();
                         callback({ marketValue, sellPrice });
                     } else {
                         callback({ marketValue: 0, sellPrice: 0 });
@@ -785,18 +773,7 @@
     // TAB / ITEM VISIBILITY
     // =====================================================================
 
-    function getActiveTab() {
-        const tabs = document.querySelectorAll('ul.items-tabs li, div[class*="item___UN3Mg"]');
-        for (const tab of tabs) {
-            if (tab.classList.contains('active') || tab.className.includes('active___')) {
-                return tab.getAttribute('data-category') || tab.textContent.trim().toLowerCase() || 'all';
-            }
-        }
-        return 'all';
-    }
-
     function getVisibleItems() {
-        getActiveTab();
         const allItemsLists = document.querySelectorAll('ul.items-cont, div[class*="itemsContainner___"], div[class*="rowItems___"]');
         let visibleItems = [];
         for (const list of allItemsLists) {

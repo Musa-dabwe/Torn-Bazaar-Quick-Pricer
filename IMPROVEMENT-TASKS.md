@@ -20,7 +20,7 @@ Line references point at `script-v2_8_9.js`.
   Add a `timeout` option plus `ontimeout`/`onabort` callbacks that release the queue
   the same way `onerror` does.
 
-- [ ] **1.2 — Fix the mid-stylesheet `@import` (it is silently ignored).**
+- [x] **1.2 — Fix the mid-stylesheet `@import` (it is silently ignored).** *(Done in v2.9: both remote imports removed — see 2.3.)*
   CSS requires all `@import` rules to appear before any other rules. The IBM Plex Mono
   import at line 188 sits in the middle of the stylesheet, so browsers drop it and the
   settings modal falls back to `SFMono-Regular`/`Consolas`. Either move both imports to
@@ -92,13 +92,13 @@ Line references point at `script-v2_8_9.js`.
   a **Public**-level key is sufficient, so users don't paste full-access keys into a
   third-party script.
 
-- [ ] **2.3 — Remove remote Google Fonts imports.**
+- [x] **2.3 — Remove remote Google Fonts imports.** *(Done in v2.9: system font stacks.)*
   Two `@import url('https://fonts.googleapis.com/...')` calls (lines 140, 188) leak
   every bazaar page visit to Google, add a render dependency on a third-party CDN,
   and one of them doesn't even load (see 1.2). Fall back to system font stacks, or
   embed the fonts as data URIs if the aesthetic matters.
 
-- [ ] **2.4 — Add `@noframes` to the userscript header.**
+- [x] **2.4 — Add `@noframes` to the userscript header.** *(Done in v2.9.)*
   Without it the script can also run in iframes matching `bazaar.php*`, duplicating
   the chip, observers, and API traffic.
 
@@ -179,7 +179,7 @@ Line references point at `script-v2_8_9.js`.
 
 ## 5. Code quality & dead code (P3)
 
-- [ ] **5.1 — Delete dead code.**
+- [x] **5.1 — Delete dead code.** *(Done in v2.9: all five removed.)*
   - `saveConfig()` no-op (line 466) and its one call site (line 665);
   - `isMobile` (line 464) — computed, never read;
   - `CONFIG.profilePhoto` getter/setter (lines 62–63) — never used;
@@ -188,7 +188,7 @@ Line references point at `script-v2_8_9.js`.
   - `CONFIG.lastPriceUpdate` (lines 54–55) — written on every fetch, reset by "clear
     cache", never read for any decision.
 
-- [ ] **5.2 — Single source of truth for the version string.**
+- [x] **5.2 — Single source of truth for the version string.** *(Done in v2.9: `VERSION` const from `GM_info`.)*
   "2.8.9" appears in the metadata block (line 4), the startup log (line 28), and the
   settings footer (line 581). Add a `const VERSION` (read `GM_info.script.version`
   where available) and reference it.
