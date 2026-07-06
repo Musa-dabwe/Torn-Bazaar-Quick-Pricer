@@ -224,14 +224,14 @@ Line references point at `script-v2_8_9.js`.
 
 ## 6. Repo hygiene & tooling (P3)
 
-- [ ] **6.1 — Explain or remove the `script/` directory.**
+- [x] **6.1 — Explain or remove the `script/` directory.** *(Done in v2.9: folder deleted.)*
   It contains vendored third-party libraries (jQuery 1.8.2, jQuery UI, centrifuge,
   polyfills…) that the userscript never references. If they're reference copies of
   Torn's page scripts, say so in a README inside the folder; otherwise delete them —
   they're ~1 MB of unexplained code in a userscript repo (and jQuery 1.8.2 has known
   CVEs, which looks bad in the repo even if unused).
 
-- [ ] **6.2 — Use a stable filename for the script.**
+- [x] **6.2 — Use a stable filename for the script.** *(Done in v2.9: renamed to `torn-bazaar-quick-pricer.user.js`.)*
   `script-v2_8_9.js` bakes the version into the filename, so every release breaks
   links and loses per-file git history (`git log --follow` aside). Rename to
   `torn-bazaar-quick-pricer.user.js` (the `.user.js` suffix also enables one-click
