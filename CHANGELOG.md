@@ -3,6 +3,27 @@
 Releases should be tagged (`v2.9`, …) and published as GitHub Releases when merged
 to `main`, so Greasy Fork users can diff versions and roll back easily.
 
+## Unreleased
+
+Fixes driven by tester feedback (200-item bazaar stress test).
+
+- **Batch runs now cover the whole list, not just the rendered chunk.** Torn lazy-loads
+  bazaar rows (~48 at a time) as you scroll, so "Update All" / "Quick Fill" silently
+  missed everything below the fold and had to be re-run per scroll position. Both now
+  auto-scroll to force every row into the DOM first (with a "Loading N…" progress label),
+  then restore your scroll position and process the full list.
+- **$1 listings are skipped by Update All.** Pricing an item at $1 is Torn's convention
+  for intentional giveaway/transfer listings; batch runs no longer "correct" them to
+  market value. New "Skip $1 Items" toggle in settings (on by default); the summary
+  toast reports how many were skipped. Per-item buttons still update them on explicit click.
+- **Price-change confirmations now name the item**, so during a batch run you know
+  *which* item moved more than the threshold.
+- **The alert threshold is user-adjustable** ("Alert at %", default 20, 0–1000) instead
+  of hard-coded at 20%.
+- **API key prompts state the required key level**: a Public-scope key is enough, with
+  a warning not to paste Full Access keys into third-party scripts (previously only
+  documented in the README).
+
 ## 2.9 — 2026-07-06
 
 Implementation of the full v2.8.9 code audit (see `IMPROVEMENT-TASKS.md`).
