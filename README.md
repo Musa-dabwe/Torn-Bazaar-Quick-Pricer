@@ -8,10 +8,15 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
 
 ## Features
 
-- **Quick Fill** — fills price and quantity for every visible item on the *Add items*
+- **Quick Fill** — fills price and quantity for every item on the *Add items*
   page from live Torn market values, minus your configured discount.
 - **Update All** — refreshes the prices of everything already listed on the
-  *Manage bazaar* page, asking before applying any price change larger than 20%.
+  *Manage bazaar* page, asking before applying any price change larger than your
+  configured threshold (20% by default). Items priced at $1 (the giveaway/transfer
+  convention) are skipped by default.
+- **Full-list coverage** — Torn lazy-loads bazaar rows as you scroll; batch runs
+  auto-scroll to pull every row into the page first, so a 200-item bazaar updates
+  in one click instead of one click per scroll position.
 - **Per-item buttons** — each item row gets its own fill/update button, with one-click
   undo on the add page.
 - **NPC floor enforcement** — never prices an item below its NPC sell value
@@ -62,9 +67,11 @@ Open with the gear icon on the floating chip.
 | --- | --- | --- |
 | API key | — | Your 16-character Torn API key (Public scope is enough). |
 | Discount % | 0 | Percentage knocked off the market value (0–99.9). |
+| Alert at % | 20 | Ask before applying a price change larger than this (0 asks on every change). |
 | Cache (min) | 5 | How long fetched prices are reused before re-querying the API (1–120 minutes). |
 | NPC floor enforcement | on | Never price below the item's NPC sell value. |
 | Skip RW weapons | on | Batch runs skip detected ranked-war weapons. |
+| Skip $1 items | on | Update All leaves $1 (giveaway) listings alone; per-item buttons still work on them. |
 | Clear cache | — | Drops all cached prices immediately. |
 
 ## Development

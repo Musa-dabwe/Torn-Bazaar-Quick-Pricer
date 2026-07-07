@@ -50,6 +50,22 @@ describe('clampDiscount', () => {
     });
 });
 
+describe('clampThreshold', () => {
+    const { QP } = loadScript();
+    it('passes through sane values', () => {
+        expect(QP.clampThreshold(35)).toBe(35);
+        expect(QP.clampThreshold(0)).toBe(0);
+    });
+    it('clamps out-of-range values', () => {
+        expect(QP.clampThreshold(-5)).toBe(0);
+        expect(QP.clampThreshold(5000)).toBe(1000);
+    });
+    it('treats garbage as the default 20', () => {
+        expect(QP.clampThreshold('abc')).toBe(20);
+        expect(QP.clampThreshold(undefined)).toBe(20);
+    });
+});
+
 describe('calculateFinalPrice', () => {
     it('applies the discount to the market value', () => {
         const { QP } = loadScript();
@@ -110,6 +126,29 @@ describe('getQuantity', () => {
     });
 });
 
+describe('getItemName', () => {
+    const { QP } = loadScript();
+
+    function itemWithTitle(text) {
+        const el = document.createElement('div');
+        const title = document.createElement('div');
+        title.className = 'title-wrap';
+        title.textContent = text;
+        el.appendChild(title);
+        return el;
+    }
+
+    it('strips a trailing quantity marker', () => {
+        expect(QP.getItemName(itemWithTitle('Xanax x25'))).toBe('Xanax');
+    });
+    it('keeps names without a marker intact', () => {
+        expect(QP.getItemName(itemWithTitle('Model x15 Rifle'))).toBe('Model x15 Rifle');
+    });
+    it('returns null when the title element is missing', () => {
+        expect(QP.getItemName(document.createElement('div'))).toBe(null);
+    });
+});
+
 describe('RW weapon detection', () => {
     const { QP } = loadScript();
 
@@ -162,6 +201,17 @@ describe('settings storage', () => {
         expect(QP.CONFIG.apiKey).toBe('');
         const good = loadScript({ tornApiKey: 'abcDEF1234567890' });
         expect(good.QP.CONFIG.apiKey).toBe('abcDEF1234567890');
+    });
+
+    it('defaults to skipping $1 items and a 20% alert threshold', () => {
+        const { QP } = loadScript();
+        expect(QP.CONFIG.skipDollarItems).toBe(true);
+        expect(QP.CONFIG.priceDiffThreshold).toBe(20);
+    });
+
+    it('clamps a garbage stored alert threshold on read', () => {
+        const { QP } = loadScript({ priceDiffThreshold: 99999 });
+        expect(QP.CONFIG.priceDiffThreshold).toBe(1000);
     });
 
     it('derives cacheTimeout from the minutes setting with a floor of 1', () => {

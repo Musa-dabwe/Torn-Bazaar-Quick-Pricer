@@ -46,6 +46,13 @@
         return Math.min(Math.max(n, 0), 99.9);
     }
 
+    /** Price-change alert threshold: 0 confirms every change, capped at 1000%. */
+    function clampThreshold(val) {
+        const n = parseFloat(val);
+        if (!Number.isFinite(n)) return 20;
+        return Math.min(Math.max(n, 0), 1000);
+    }
+
     // In-memory settings cache: storage is hit once per key, then reads stay in
     // memory (hot paths read settings once per item) and writes go through to
     // GM_setValue immediately.
@@ -85,6 +92,12 @@
         set disableNpcCheck(val) { setSetting('disableNpcCheck', val); },
         get skipRwWeapons() { return getSetting('skipRwWeapons', true); },
         set skipRwWeapons(val) { setSetting('skipRwWeapons', val); },
+        // $1 is Torn's convention for intentional giveaway/transfer listings —
+        // batch runs must not "correct" them to market value.
+        get skipDollarItems() { return getSetting('skipDollarItems', true); },
+        set skipDollarItems(val) { setSetting('skipDollarItems', val); },
+        get priceDiffThreshold() { return clampThreshold(getSetting('priceDiffThreshold', 20)); },
+        set priceDiffThreshold(val) { setSetting('priceDiffThreshold', clampThreshold(val)); },
         get cacheTimeoutMin() { return getSetting('cacheTimeoutMin', 5); },
         set cacheTimeoutMin(val) { setSetting('cacheTimeoutMin', val); },
         get cacheTimeout() { return Math.max(1, this.cacheTimeoutMin) * 60 * 1000; }
@@ -435,7 +448,7 @@
             align-items: center;
             padding: 8px 0;
         }
-        .qp-toggle-row:first-child { border-bottom: 1px solid var(--border); }
+        .qp-toggle-row:not(:last-child) { border-bottom: 1px solid var(--border); }
         .qp-toggle-row span {
             color: var(--text);
             font-size: 11px;
@@ -591,6 +604,12 @@
             white-space: pre-line;
             color: var(--text);
         }
+        .qp-note {
+            margin: 0;
+            font-size: 10px;
+            line-height: 1.5;
+            color: var(--muted);
+        }
     `;
     document.head.appendChild(style);
 
@@ -722,6 +741,9 @@
                             <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
+                    <p class="qp-note">A <strong>Public</strong>-level key is all this script needs — it only reads
+                    item market data. Create one at Torn &gt; Settings &gt; API Keys &gt; Create Key &gt; Public.
+                    Don't paste a Full Access key into third-party scripts.</p>
                 </div>
                 <div class="qp-footer">
                     <div class="qp-buttons">
@@ -772,9 +794,14 @@
                             <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
+                    <p class="qp-note">A <strong>Public</strong>-level key is enough — the script only reads item market data.</p>
                     <div class="qp-card">
                         <label>DISCOUNT %</label>
                         <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" aria-label="Discount percent" />
+                    </div>
+                    <div class="qp-card">
+                        <label>ALERT AT %</label>
+                        <input type="number" id="qpThreshold" value="${CONFIG.priceDiffThreshold}" step="1" min="0" max="1000" aria-label="Ask before applying price changes larger than this percent" />
                     </div>
                     <div class="qp-card">
                         <label>CACHE (MIN)</label>
@@ -792,6 +819,13 @@
                             <span>Skip RW Weapons</span>
                             <label class="qp-toggle">
                                 <input type="checkbox" id="qpRwCheck" ${CONFIG.skipRwWeapons ? 'checked' : ''} />
+                                <span class="qp-toggle-track"></span>
+                            </label>
+                        </div>
+                        <div class="qp-toggle-row">
+                            <span>Skip $1 Items (Update All)</span>
+                            <label class="qp-toggle">
+                                <input type="checkbox" id="qpDollarCheck" ${CONFIG.skipDollarItems ? 'checked' : ''} />
                                 <span class="qp-toggle-track"></span>
                             </label>
                         </div>
@@ -813,6 +847,7 @@
         document.body.appendChild(overlay);
         wireToggleRowLabel(overlay, 'qpNpcCheck');
         wireToggleRowLabel(overlay, 'qpRwCheck');
+        wireToggleRowLabel(overlay, 'qpDollarCheck');
 
         const apiInput = overlay.querySelector('#qpApiKey');
         // Set via DOM, never string-interpolated into HTML: a malformed stored value
@@ -834,9 +869,11 @@
                 return;
             }
             CONFIG.defaultDiscount = clampDiscount(overlay.querySelector('#qpDiscount').value);
+            CONFIG.priceDiffThreshold = clampThreshold(overlay.querySelector('#qpThreshold').value);
             CONFIG.apiKey = key;
             CONFIG.disableNpcCheck = !overlay.querySelector('#qpNpcCheck').checked;
             CONFIG.skipRwWeapons = overlay.querySelector('#qpRwCheck').checked;
+            CONFIG.skipDollarItems = overlay.querySelector('#qpDollarCheck').checked;
             CONFIG.cacheTimeoutMin = Math.min(Math.max(parseInt(overlay.querySelector('#qpCacheMin').value, 10) || 5, 1), 120);
             overlay.remove();
             qpToast('Settings saved', 'success');
@@ -873,6 +910,13 @@
         // (e.g. weapon model numbers) can't be misread as a quantity.
         const match = titleWrap.textContent.trim().match(/\bx(\d+)\s*$/i);
         return match ? parseInt(match[1], 10) : 1;
+    }
+
+    /** Item name from a row's title, minus any trailing "x<qty>" marker. */
+    function getItemName(itemElement) {
+        const titleWrap = itemElement.querySelector(SELECTORS.itemTitle);
+        if (!titleWrap) return null;
+        return titleWrap.textContent.trim().replace(/\s*\bx\d+\s*$/i, '') || null;
     }
 
     // =====================================================================
@@ -1132,7 +1176,7 @@
      * @returns {Promise<'updated'|'declined'|'failed'>} what actually happened, so
      *          batch runs can report real counts instead of attempts.
      */
-    function updateManageItemPrice(priceDiv, itemId) {
+    function updateManageItemPrice(priceDiv, itemId, itemName) {
         return new Promise((resolve) => {
             const priceInput = priceDiv.querySelector(SELECTORS.managePriceInput);
             if (!priceInput) { warnSelectorMiss('managePriceInput'); resolve('failed'); return; }
@@ -1143,17 +1187,17 @@
                 priceInput.disabled = false;
                 priceInput.style.opacity = '1';
                 if (marketValue <= 0) {
-                    qpToast('Could not fetch price for this item', 'error');
+                    qpToast(`Could not fetch price for ${itemName || 'this item'}`, 'error');
                     resolve('failed');
                     return;
                 }
                 const newPrice = calculateFinalPrice(marketValue, sellPrice, CONFIG.defaultDiscount);
                 const priceDiff = Math.abs(newPrice - currentPrice);
                 const percentDiff = currentPrice > 0 ? (priceDiff / currentPrice) * 100 : 100;
-                if (percentDiff > 20 && currentPrice > 0) {
+                if (percentDiff > CONFIG.priceDiffThreshold && currentPrice > 0) {
                     const direction = newPrice > currentPrice ? 'increase' : 'decrease';
                     const confirmed = await qpConfirm(
-                        `Price ${direction} detected!\n\nCurrent: $${currentPrice.toLocaleString()}\nNew: $${newPrice.toLocaleString()}\nDifference: ${percentDiff.toFixed(1)}%\n\nUpdate to new price?`,
+                        `${itemName ? itemName + '\n\n' : ''}Price ${direction} detected!\n\nCurrent: $${currentPrice.toLocaleString()}\nNew: $${newPrice.toLocaleString()}\nDifference: ${percentDiff.toFixed(1)}%\n\nUpdate to new price?`,
                         { title: 'PRICE CHECK', confirmText: 'UPDATE' }
                     );
                     if (!confirmed) { resolve('declined'); return; }
@@ -1227,7 +1271,7 @@
             event.preventDefault();
             if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
             if (rwInfo.isRanked && !(await confirmRwPricing(rwInfo))) return;
-            updateManageItemPrice(priceDiv, itemId);
+            updateManageItemPrice(priceDiv, itemId, getItemName(manageItem));
         });
     }
 
@@ -1265,14 +1309,53 @@
         return Array.from(manageItemsList).filter(item => !item.className.includes(SELECTORS.tabItemClass));
     }
 
+    function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
+
+    const LAZY_LOAD_POLL_MS = 250;
+    const LAZY_LOAD_QUIET_MS = 3000;   // no new rows for this long = fully loaded
+    const LAZY_LOAD_MAX_ROUNDS = 60;   // hard cap ≈ 60 chunks (~3000 rows)
+
+    /**
+     * Torn renders bazaar item lists in lazy-loaded chunks (~48 rows) as you
+     * scroll, so a batch run that only reads the DOM silently misses everything
+     * below the fold. Repeatedly scrolls the last rendered row into view to
+     * trigger the loader until no new rows appear, then restores the scroll
+     * position. @returns {Promise<Element[]>} every row, fully loaded
+     */
+    async function loadAllLazyItems(getItems, progressEl) {
+        const originalScrollY = window.scrollY;
+        for (let round = 0; round < LAZY_LOAD_MAX_ROUNDS; round++) {
+            const items = getItems();
+            if (items.length === 0) break;
+            items[items.length - 1].scrollIntoView({ block: 'end' });
+            if (progressEl) progressEl.textContent = `Loading ${items.length}…`;
+            // Give the loader time to render the next chunk; a full quiet
+            // window with the bottom row in view means the list is complete.
+            let waited = 0;
+            while (waited < LAZY_LOAD_QUIET_MS && getItems().length === items.length) {
+                await sleep(LAZY_LOAD_POLL_MS);
+                waited += LAZY_LOAD_POLL_MS;
+            }
+            if (getItems().length === items.length) break;
+        }
+        window.scrollTo(0, originalScrollY);
+        return getItems();
+    }
+
     async function updateAllManagePrices() {
-        const items = getManageItems();
-        if (items.length === 0) { qpToast('No items found to update!', 'error'); return; }
         const updateButton = chipFillBtn;
-        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; }
+        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; updateButton.textContent = 'Loading…'; }
+        const restoreButton = () => {
+            if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
+        };
+
+        // Pull every lazy-loaded row into the DOM first — otherwise only the
+        // currently rendered chunk (~48 items) would get new prices.
+        const items = await loadAllLazyItems(getManageItems, updateButton);
+        if (items.length === 0) { restoreButton(); qpToast('No items found to update!', 'error'); return; }
 
         // Collect the actual work first so progress and totals are accurate.
-        let skippedRw = 0;
+        let skippedRw = 0, skippedDollar = 0;
         const work = [];
         for (const item of items) {
             const priceDiv = item.querySelector(SELECTORS.managePriceWrap);
@@ -1281,21 +1364,27 @@
             const itemId = getItemIdFromImage(image);
             if (!itemId) continue;
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; continue; }
-            work.push({ priceDiv, itemId });
+            if (CONFIG.skipDollarItems) {
+                const priceInput = priceDiv.querySelector(SELECTORS.managePriceInput);
+                const currentPrice = priceInput ? parseInt(priceInput.value.replace(/,/g, ''), 10) || 0 : 0;
+                if (currentPrice === 1) { skippedDollar++; continue; }
+            }
+            work.push({ priceDiv, itemId, itemName: getItemName(item) });
         }
 
         let updated = 0, failed = 0, done = 0;
-        for (const { priceDiv, itemId } of work) {
+        for (const { priceDiv, itemId, itemName } of work) {
             done++;
             if (updateButton) updateButton.textContent = `Updating ${done}/${work.length}`;
-            const result = await updateManageItemPrice(priceDiv, itemId);
+            const result = await updateManageItemPrice(priceDiv, itemId, itemName);
             if (result === 'updated') updated++;
             else if (result === 'failed') failed++;
         }
 
-        if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
+        restoreButton();
         let msg = `Updated ${updated} of ${work.length} item price${work.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
+        if (skippedDollar > 0) msg += ` — ${skippedDollar} $1 item${skippedDollar > 1 ? 's' : ''} skipped`;
         if (failed > 0) msg += ` — ${failed} failed`;
         qpToast(msg, failed > 0 ? 'error' : 'success', 6000);
     }
@@ -1498,15 +1587,22 @@
     }
 
     async function fillAllItems() {
-        const items = getVisibleItems();
-        if (items.length === 0) { qpToast('No items found to fill!', 'error'); return; }
         const fillButton = chipFillBtn;
-        if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Filling...'; }
+        if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Loading…'; }
+        // Same lazy-loader workaround as Update All: rows below the fold aren't
+        // in the DOM until scrolled to.
+        const items = await loadAllLazyItems(getVisibleItems, fillButton);
+        if (items.length === 0) {
+            if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
+            qpToast('No items found to fill!', 'error');
+            return;
+        }
         let skippedRw = 0;
         const toFill = items.filter(item => {
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
             return true;
         });
+        if (fillButton) fillButton.textContent = `Filling 0/${toFill.length}`;
         let completed = 0, filled = 0;
         const promises = toFill.map(item => fillItemPrice(item).then((ok) => {
             completed++;
@@ -1617,12 +1713,14 @@
         module.exports = {
             isValidApiKey,
             clampDiscount,
+            clampThreshold,
             calculateFinalPrice,
             rwSkipLabel,
             getRWBonusInfo,
             detectRarity,
             getItemIdFromImage,
             getQuantity,
+            getItemName,
             getCachedPrice,
             cachePrice,
             clearPriceCache,
