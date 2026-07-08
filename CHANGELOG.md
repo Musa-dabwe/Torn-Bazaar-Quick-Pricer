@@ -7,11 +7,13 @@ to `main`, so Greasy Fork users can diff versions and roll back easily.
 
 Fixes driven by tester feedback (200-item bazaar stress test).
 
-- **Batch runs now cover the whole list, not just the rendered chunk.** Torn lazy-loads
-  bazaar rows (~48 at a time) as you scroll, so "Update All" / "Quick Fill" silently
-  missed everything below the fold and had to be re-run per scroll position. Both now
-  auto-scroll to force every row into the DOM first (with a "Loading N…" progress label),
-  then restore your scroll position and process the full list.
+- **Batch runs no longer auto-scroll the page.** Torn lazy-loads bazaar rows (~48 at a
+  time) as you scroll, so "Update All" / "Quick Fill" only see the rows already rendered.
+  A previous build auto-scrolled to force the rest into the DOM, but programmatically
+  moving the page simulates interaction the user never performed, which Torn's script
+  rules disallow — so this was removed. Batch runs now process the currently loaded rows
+  and, when more rows may be waiting below the fold, the summary toast tells you to scroll
+  down and run again.
 - **$1 listings are skipped by Update All.** Pricing an item at $1 is Torn's convention
   for intentional giveaway/transfer listings; batch runs no longer "correct" them to
   market value. New "Skip $1 Items" toggle in settings (on by default); the summary

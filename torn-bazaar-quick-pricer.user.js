@@ -1309,37 +1309,21 @@
         return Array.from(manageItemsList).filter(item => !item.className.includes(SELECTORS.tabItemClass));
     }
 
-    function sleep(ms) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-
-    const LAZY_LOAD_POLL_MS = 250;
-    const LAZY_LOAD_QUIET_MS = 3000;   // no new rows for this long = fully loaded
-    const LAZY_LOAD_MAX_ROUNDS = 60;   // hard cap ≈ 60 chunks (~3000 rows)
-
     /**
-     * Torn renders bazaar item lists in lazy-loaded chunks (~48 rows) as you
-     * scroll, so a batch run that only reads the DOM silently misses everything
-     * below the fold. Repeatedly scrolls the last rendered row into view to
-     * trigger the loader until no new rows appear, then restores the scroll
-     * position. @returns {Promise<Element[]>} every row, fully loaded
+     * Torn lazy-loads bazaar rows (~48 at a time) and only renders the next
+     * chunk once the last row scrolls into view, so a batch run can only see
+     * the rows already in the DOM. We deliberately do NOT auto-scroll to force
+     * the rest in — programmatically moving the page simulates interaction the
+     * user never performed, which Torn's script rules disallow. Instead, if the
+     * last rendered row still sits below the fold (so more rows may be waiting
+     * to load), the caller tells the user to scroll down and run again.
+     * @param {Element[]} items currently rendered rows
+     * @returns {boolean} true if more rows may exist below what's loaded
      */
-    async function loadAllLazyItems(getItems, progressEl) {
-        const originalScrollY = window.scrollY;
-        for (let round = 0; round < LAZY_LOAD_MAX_ROUNDS; round++) {
-            const items = getItems();
-            if (items.length === 0) break;
-            items[items.length - 1].scrollIntoView({ block: 'end' });
-            if (progressEl) progressEl.textContent = `Loading ${items.length}…`;
-            // Give the loader time to render the next chunk; a full quiet
-            // window with the bottom row in view means the list is complete.
-            let waited = 0;
-            while (waited < LAZY_LOAD_QUIET_MS && getItems().length === items.length) {
-                await sleep(LAZY_LOAD_POLL_MS);
-                waited += LAZY_LOAD_POLL_MS;
-            }
-            if (getItems().length === items.length) break;
-        }
-        window.scrollTo(0, originalScrollY);
-        return getItems();
+    function mayHaveUnloadedItems(items) {
+        if (items.length === 0) return false;
+        const lastRect = items[items.length - 1].getBoundingClientRect();
+        return lastRect.top > window.innerHeight;
     }
 
     async function updateAllManagePrices() {
@@ -1349,10 +1333,12 @@
             if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
         };
 
-        // Pull every lazy-loaded row into the DOM first — otherwise only the
-        // currently rendered chunk (~48 items) would get new prices.
-        const items = await loadAllLazyItems(getManageItems, updateButton);
+        // Only the rows Torn has already rendered are processed. If more may be
+        // waiting below the fold, we flag it in the summary so the user can
+        // scroll to load them and run again (see mayHaveUnloadedItems).
+        const items = getManageItems();
         if (items.length === 0) { restoreButton(); qpToast('No items found to update!', 'error'); return; }
+        const moreBelow = mayHaveUnloadedItems(items);
 
         // Collect the actual work first so progress and totals are accurate.
         let skippedRw = 0, skippedDollar = 0;
@@ -1386,6 +1372,7 @@
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
         if (skippedDollar > 0) msg += ` — ${skippedDollar} $1 item${skippedDollar > 1 ? 's' : ''} skipped`;
         if (failed > 0) msg += ` — ${failed} failed`;
+        if (moreBelow) msg += ' — scroll down to load more items, then run again';
         qpToast(msg, failed > 0 ? 'error' : 'success', 6000);
     }
 
@@ -1589,14 +1576,15 @@
     async function fillAllItems() {
         const fillButton = chipFillBtn;
         if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Loading…'; }
-        // Same lazy-loader workaround as Update All: rows below the fold aren't
-        // in the DOM until scrolled to.
-        const items = await loadAllLazyItems(getVisibleItems, fillButton);
+        // Same as Update All: only the rows Torn has already rendered are
+        // processed; rows below the fold aren't in the DOM until scrolled to.
+        const items = getVisibleItems();
         if (items.length === 0) {
             if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
             qpToast('No items found to fill!', 'error');
             return;
         }
+        const moreBelow = mayHaveUnloadedItems(items);
         let skippedRw = 0;
         const toFill = items.filter(item => {
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
@@ -1615,6 +1603,7 @@
         let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
         if (failedCount > 0) msg += ` — ${failedCount} failed`;
+        if (moreBelow) msg += ' — scroll down to load more items, then run again';
         qpToast(msg, failedCount > 0 ? 'error' : 'success', 6000);
     }
 

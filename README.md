@@ -14,9 +14,10 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   *Manage bazaar* page, asking before applying any price change larger than your
   configured threshold (20% by default). Items priced at $1 (the giveaway/transfer
   convention) are skipped by default.
-- **Full-list coverage** — Torn lazy-loads bazaar rows as you scroll; batch runs
-  auto-scroll to pull every row into the page first, so a 200-item bazaar updates
-  in one click instead of one click per scroll position.
+- **Loaded-row batching** — Torn lazy-loads bazaar rows as you scroll, and batch runs
+  process the rows currently loaded in the page (the script never scrolls the page for
+  you — that would break Torn's script rules). If more rows may be waiting below the
+  fold, the summary tells you to scroll down and run again to cover them.
 - **Per-item buttons** — each item row gets its own fill/update button, with one-click
   undo on the add page.
 - **NPC floor enforcement** — never prices an item below its NPC sell value
