@@ -3,7 +3,7 @@
 Releases should be tagged (`v2.9`, …) and published as GitHub Releases when merged
 to `main`, so Greasy Fork users can diff versions and roll back easily.
 
-## Unreleased
+## 2.9.1 — 2026-07-08
 
 Fixes driven by tester feedback (200-item bazaar stress test).
 
