@@ -4,7 +4,7 @@ A userscript for [Torn](https://www.torn.com) that fills your bazaar listings wi
 market-based prices in one click — per item or for the whole page — with configurable
 discounting, NPC-floor protection, and ranked-war weapon detection.
 
-**Current version: 2.9** — see the [CHANGELOG](CHANGELOG.md) for what's new.
+**Current version: 2.9.1** — see the [CHANGELOG](CHANGELOG.md) for what's new.
 
 ## Features
 
