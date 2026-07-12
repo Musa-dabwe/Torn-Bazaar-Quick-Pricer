@@ -3,6 +3,22 @@
 Releases should be tagged (`v2.9`, …) and published as GitHub Releases when merged
 to `main`, so Greasy Fork users can diff versions and roll back easily.
 
+## 2.9.2 — 2026-07-12
+
+UI-only release — no functional changes.
+
+- **New "Pastel" UI** across the whole script: settings panel, API key prompt, confirm
+  dialogs, toasts, floating chip and per-item buttons now use the shared pastel design
+  system (soft lavender palette, Nunito, rounded cards, springy pop-in) also used by
+  Torn City Loot Finder, so all our scripts share one look.
+- Settings dialog reorganized to match the design: compact number-cell grid for
+  Discount / Alert at / Cache, toggle rows with descriptions, header ✕ close button,
+  version + GitHub link in the header.
+- API key prompt gains a "Where do I find my key?" link to Torn's API preferences page.
+- Toasts are now white pills with a status icon; confirm dialogs use the pastel modal
+  with a warning/RW badge.
+- Design tokens and component reference documented in `docs/pastel-theme.md`.
+
 ## 2.9.1 — 2026-07-08
 
 Fixes driven by tester feedback (200-item bazaar stress test).

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.9.1
+// @version      2.9.2
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -26,7 +26,7 @@
         return;
     }
 
-    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.1';
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.2';
 
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
@@ -254,7 +254,7 @@
     function confirmRwPricing(rwInfo) {
         return qpConfirm(
             `This appears to be a ${rwSkipLabel(rwInfo)}.\nRW weapons have unique pricing not based on standard market value.\n\nPrice it anyway using the base item's market value?`,
-            { title: 'RW WEAPON DETECTED', confirmText: 'PRICE IT' }
+            { title: 'RW weapon detected', confirmText: 'Price it', kind: 'rw' }
         );
     }
 
@@ -272,344 +272,317 @@
 
     // Best-effort cleanup of a previous instance (PDA re-injection / SPA nav
     // without a full reload): sweep any UI the old instance left in the DOM.
-    ['#qp-style', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
+    ['#qp-style', '#qp-font', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
         document.querySelectorAll(sel).forEach(el => el.remove()));
+
+    // Nunito is the shared display face of the pastel design system
+    // (see docs/pastel-theme.md) — falls back to system-ui if blocked.
+    const fontLink = document.createElement('link');
+    fontLink.id = 'qp-font';
+    fontLink.rel = 'stylesheet';
+    fontLink.href = 'https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap';
+    document.head.appendChild(fontLink);
 
     const style = document.createElement('style');
     style.id = 'qp-style';
     style.textContent = `
-        .qp-btn {
-            background: #5F5F5F !important;
-            color: white !important;
-            border: none;
-            border-radius: 0 !important;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            transition: filter 0.2s;
-            padding: 5px;
-            font-size: 13px;
-            font-weight: 700;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+        /* ── PASTEL DESIGN SYSTEM (shared tokens — docs/pastel-theme.md) ── */
+        :root {
+            --qp-accent:    #7a6bd6;
+            --qp-accent-bg: #efeafd;
+            --qp-ink:       #2b2740;
+            --qp-muted:     #8a86a0;
+            --qp-field-bg:  #f7f6fb;
+            --qp-border:    #e5e1f4;
+            --qp-ok:        #3aa06b;
+            --qp-ok-bg:     #e4f3ec;
+            --qp-danger:    #c25a5a;
+            --qp-danger-bg: #fbecec;
+            --qp-warn:      #c9782e;
+            --qp-warn-bg:   #fdf6ec;
+            --qp-rw:        #f0a35e;
+            --qp-rw-bg:     #fdeeda;
+            --qp-font: 'Nunito', system-ui, sans-serif;
         }
-        .qp-btn:hover { filter: brightness(0.8); }
-        .qp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .qp-btn-red { background: #E3392C !important; color: white !important; }
-        .qp-btn-update { padding: 5px; }
+
+        @keyframes qp-pop-spring {
+            0%   { transform: scale(.4) translateY(14px); opacity: 0; }
+            55%  { transform: scale(1.08) translateY(-3px); opacity: 1; }
+            75%  { transform: scale(.97) translateY(1px); }
+            100% { transform: scale(1) translateY(0); }
+        }
+        @keyframes qp-toast-in {
+            from { transform: translateY(12px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+        }
+        @keyframes qpDotBlink {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.25; }
+        }
+
+        /* ── PER-ITEM BUTTONS ── */
+        .qp-item-btn {
+            border: none;
+            cursor: pointer;
+            width: 34px; height: 34px;
+            border-radius: 10px !important;
+            background: var(--qp-accent) !important;
+            color: #fff !important;
+            display: inline-flex; align-items: center; justify-content: center;
+            box-shadow: 0 3px 8px rgba(122,107,214,.3);
+            transition: background .15s;
+            font-family: var(--qp-font) !important;
+        }
+        .qp-item-btn:hover { background: #6a5ac6 !important; }
+        .qp-item-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .qp-item-btn.qp-btn-red {                 /* filled → undo / fetch failed */
+            background: var(--qp-danger-bg) !important;
+            color: var(--qp-danger) !important;
+            box-shadow: none;
+        }
+        .qp-item-btn.qp-btn-red:hover { background: #f6dede !important; }
 
         .quick-price-btn, .quick-update-price-btn {
             display: flex; align-items: center; flex-shrink: 0;
             margin-left: auto; padding-right: 5px; z-index: 10;
         }
 
-        .qp-rw-dot {
-            width: 7px; height: 7px;
-            border-radius: 0 !important;
+        .qp-rw-dot {                              /* blinking RW badge next to the button */
+            width: 9px; height: 9px;
+            border-radius: 50% !important;
+            border: 2px solid #fff;
             flex-shrink: 0;
             margin-right: 4px;
             animation: qpDotBlink 1.2s ease-in-out infinite;
             pointer-events: none;
         }
-        .qp-rw-dot.rw-yellow { background: #E8C97E; }
-        .qp-rw-dot.rw-orange { background: #d4620a; }
-        .qp-rw-dot.rw-red    { background: #c0392b; }
-        .qp-rw-dot.rw-unknown { background: #7B2FBE; }
-        @keyframes qpDotBlink {
-            0%, 100% { opacity: 1; }
-            50%       { opacity: 0.2; }
-        }
+        .qp-rw-dot.rw-yellow { background: #e8c97e; }
+        .qp-rw-dot.rw-orange { background: var(--qp-rw); }
+        .qp-rw-dot.rw-red    { background: var(--qp-danger); }
+        .qp-rw-dot.rw-unknown { background: var(--qp-accent); }
 
-        /* ── TERMINAL MONO SETTINGS UI (light only) ── */
+        /* ── OVERLAY + MODAL SHELL ── */
         .qp-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
+            background: rgba(43,39,64,.28);
+            backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
             z-index: 99999;
             display: flex; align-items: center; justify-content: center;
-            font-family: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-family: var(--qp-font);
             padding: 20px 15px;
             box-sizing: border-box;
         }
         .qp-modal {
-            --bg: #f4f4f0;
-            --header-bg: #14140f;
-            --header-text: #c8f5cf;
-            --text: #1a1a1a;
-            --muted: #5a5a5a;
-            --accent: #0a7a3d;
-            --border: #c8c8c0;
-            --field: #ffffff;
-            --danger: #b3271e;
-            width: 100%; max-width: 420px;
-            background: var(--bg);
-            color: var(--text);
-            border: 1px solid var(--border);
-            display: flex; flex-direction: column;
-            border-radius: 0 !important;
+            width: 320px; max-width: calc(100vw - 32px);
+            background: #fff;
+            color: var(--qp-ink);
+            border-radius: 20px;
+            box-shadow: 0 16px 48px rgba(43,39,64,.35);
+            animation: qp-pop-spring .45s cubic-bezier(.34,1.56,.64,1) both;
             max-height: 100%;
             overflow-y: auto;
         }
-        @media (min-width: 900px) {
-            .qp-modal { width: 720px; max-width: 720px; }
+        .qp-head { display: flex; align-items: center; gap: 10px; padding: 18px 18px 0; }
+        .qp-head__badge {
+            flex: none; width: 40px; height: 40px; border-radius: 11px;
+            background: var(--qp-accent-bg);
+            display: flex; align-items: center; justify-content: center;
         }
-        .qp-header {
-            background: var(--header-bg);
-            padding: 16px 15px;
-            position: relative;
-            display: flex; flex-direction: column; gap: 10px;
+        .qp-head__badge--warn { background: var(--qp-warn-bg); font-size: 16px; }
+        .qp-head__badge--rw   { background: var(--qp-rw-bg);   font-size: 16px; position: relative; }
+        .qp-head__badge--rw .qp-rw-dot { position: absolute; right: -4px; top: -4px; margin: 0; width: 10px; height: 10px; background: var(--qp-rw); }
+        .qp-head__title { font: 800 15px/1.15 var(--qp-font); color: var(--qp-ink); }
+        .qp-head__sub   { font: 700 11.5px/1.3 var(--qp-font); color: var(--qp-muted); margin-top: 1px; }
+        .qp-head__sub a { color: var(--qp-accent); font-weight: 800; text-decoration: none; }
+        .qp-close {
+            margin-left: auto; width: 28px; height: 28px; border-radius: 50%;
+            background: #f4f2fa; border: none; cursor: pointer;
+            font: 800 13px var(--qp-font); color: var(--qp-muted);
+            display: flex; align-items: center; justify-content: center;
+            flex: none;
         }
-        .qp-header h1 {
-            margin: 0;
-            color: var(--header-text);
-            font-size: 20px;
-            font-weight: 700;
-            line-height: 1.3;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-        .qp-header h1:before { content: "$ "; opacity: 0.6; }
-        .qp-header h1 .qp-cursor {
-            display: inline-block;
-            width: 8px; height: 15px;
-            margin-left: 3px;
-            background: var(--header-text);
-            vertical-align: -2px;
-            animation: qpDotBlink 1.2s ease-in-out infinite;
-        }
-        .qp-header p {
-            margin: 4px 0 0 0;
-            color: var(--header-text);
-            opacity: 0.55;
-            font-size: 9px;
-            font-weight: 400;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-        .qp-gold-rule {
-            height: 1px;
-            background: linear-gradient(90deg, var(--accent), transparent);
-        }
-        .qp-body {
-            padding: 16px 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .qp-card {
-            background: var(--field);
-            border: 1px solid var(--border);
+        .qp-close:hover { background: #e9e5f6; }
+        .qp-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
+
+        /* ── FIELDS ── */
+        .qp-label { font: 800 11px var(--qp-font); letter-spacing: .5px; color: var(--qp-muted); margin-bottom: 6px; }
+        .qp-field {
+            display: flex; align-items: center; gap: 8px;
+            background: var(--qp-field-bg);
+            border: 2px solid var(--qp-border); border-radius: 12px;
             padding: 10px 12px;
-            display: grid;
-            grid-template-columns: 96px 1fr;
-            align-items: center;
         }
-        .qp-card label {
-            color: var(--accent);
-            font-size: 10px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-        .qp-card label:before { content: "["; opacity: 0.6; }
-        .qp-card label:after { content: "]"; opacity: 0.6; }
-        .qp-card input {
-            background: transparent;
-            border: none;
-            color: var(--text);
-            font-size: 14px;
-            font-weight: 500;
-            font-family: inherit;
-            outline: none;
-            width: 100%;
-        }
-        .qp-card:focus-within { border-color: var(--accent); }
-        .qp-input-wrap {
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        .qp-field:focus-within { border-color: var(--qp-accent); }
+        .qp-field input {
+            flex: 1; min-width: 0; border: none; outline: none; background: transparent;
+            font: 700 13px var(--qp-font); color: var(--qp-ink); letter-spacing: 1px;
         }
         .qp-eye-toggle {
-            cursor: pointer;
-            color: var(--muted);
-            display: flex;
-            align-items: center;
+            flex: none; cursor: pointer;
+            color: var(--qp-muted);
+            display: flex; align-items: center;
         }
-        .qp-eye-toggle:hover { color: var(--text); }
+        .qp-eye-toggle:hover { color: var(--qp-ink); }
 
-        .qp-toggles-card {
-            background: var(--field);
-            border: 1px solid var(--border);
-            padding: 4px 12px;
-            display: flex;
-            flex-direction: column;
+        /* note strip (security hint) */
+        .qp-note {
+            display: flex; align-items: flex-start; gap: 8px;
+            background: var(--qp-warn-bg); border-radius: 12px; padding: 10px 12px;
+            font: 700 11px/1.45 var(--qp-font); color: #9a7b45;
+            margin: 0;
         }
+
+        /* number-field grid: DISCOUNT / ALERT AT / CACHE */
+        .qp-numgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        .qp-numcell {
+            background: var(--qp-field-bg); border: 1.5px solid var(--qp-border);
+            border-radius: 12px; padding: 9px 10px;
+            display: block;
+        }
+        .qp-numcell:focus-within { border-color: var(--qp-accent); }
+        .qp-numcell__label { font: 800 9.5px var(--qp-font); letter-spacing: .4px; color: var(--qp-muted); }
+        .qp-numcell__row { display: flex; align-items: baseline; gap: 2px; margin-top: 3px; }
+        .qp-numcell input {
+            width: 100%; min-width: 0; border: none; outline: none; background: transparent;
+            font: 900 16px var(--qp-font); color: var(--qp-ink); padding: 0;
+        }
+        .qp-numcell__unit { font: 800 11px var(--qp-font); color: var(--qp-muted); }
+
+        /* ── TOGGLES ── */
+        .qp-toggles-card { background: var(--qp-field-bg); border-radius: 14px; padding: 4px 12px; display: flex; flex-direction: column; }
         .qp-toggle-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 8px 0;
+            display: flex; align-items: center; justify-content: space-between; gap: 12px;
+            padding: 10px 0;
         }
-        .qp-toggle-row:not(:last-child) { border-bottom: 1px solid var(--border); }
-        .qp-toggle-row span {
-            color: var(--text);
-            font-size: 11px;
-            font-weight: 500;
-            text-transform: uppercase;
-        }
-        .qp-toggle-row span.qp-on { color: var(--accent); }
+        .qp-toggle-row:not(:last-child) { border-bottom: 1.5px solid #edeaf6; }
+        .qp-toggle-row__name { font: 800 12px var(--qp-font); color: var(--qp-ink); display: block; }
+        .qp-toggle-row__desc { font: 700 10px/1.35 var(--qp-font); color: var(--qp-muted); }
 
         .qp-toggle {
             position: relative;
             display: inline-block;
-            width: 30px;
-            height: 15px;
+            flex: none;
+            width: 36px;
+            height: 21px;
         }
         .qp-toggle input { opacity: 0; width: 0; height: 0; }
         .qp-toggle-track {
             position: absolute;
             cursor: pointer;
             top: 0; left: 0; right: 0; bottom: 0;
-            background-color: var(--field);
-            border: 1px solid var(--border);
-            border-radius: 0 !important;
-            transition: .2s;
+            background: #d9d5e8;
+            border-radius: 999px !important;
+            transition: background .15s;
         }
         .qp-toggle-track:before {
             position: absolute;
             content: "";
-            height: 9px;
-            width: 9px;
-            left: 2px;
-            bottom: 2px;
-            background-color: var(--muted);
-            transition: .2s;
+            width: 16px; height: 16px;
+            left: 2.5px; top: 2.5px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,.2);
+            transition: transform .15s;
         }
-        input:checked + .qp-toggle-track {
-            border-color: var(--accent);
+        input:checked + .qp-toggle-track { background: var(--qp-accent); }
+        input:checked + .qp-toggle-track:before { transform: translateX(15px); }
+
+        /* ── MODAL BUTTONS ── */
+        .qp-btn-row { display: flex; gap: 8px; }
+        .qp-btn {
+            border: none; cursor: pointer; border-radius: 12px !important; padding: 11px 0;
+            font: 900 13.5px var(--qp-font); text-align: center; flex: 1;
         }
-        input:checked + .qp-toggle-track:before {
-            transform: translateX(14px);
-            background-color: var(--accent);
+        .qp-btn--primary {
+            background: var(--qp-accent); color: #fff;
+            box-shadow: 0 4px 12px rgba(122,107,214,.35);
+        }
+        .qp-btn--primary:hover { background: #6a5ac6; }
+        .qp-btn--ghost  { background: #f4f2fa; color: var(--qp-muted); font-weight: 800; font-size: 12px; }
+        .qp-btn--ghost:hover { background: #e9e5f6; }
+        .qp-btn--danger { background: var(--qp-danger-bg); color: var(--qp-danger); font-weight: 800; font-size: 12px; }
+        .qp-btn--danger:hover { background: #f6dede; }
+        .qp-btn--rw {
+            background: var(--qp-rw); color: #fff;
+            box-shadow: 0 4px 12px rgba(240,163,94,.4);
+        }
+        .qp-help { text-align: center; font: 800 11.5px var(--qp-font); color: var(--qp-accent); text-decoration: none; }
+        .qp-confirm-text {
+            margin: 0;
+            font: 700 12px/1.55 var(--qp-font);
+            white-space: pre-line;
+            color: var(--qp-ink);
         }
 
-        .qp-footer {
-            padding: 0 15px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-        .qp-buttons {
-            display: flex;
-            gap: 8px;
-        }
-        .qp-buttons button {
-            flex: 1;
-            padding: 10px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            cursor: pointer;
-            background: transparent;
-            border: 1px solid var(--border);
-            color: var(--text);
-            font-family: inherit;
-            border-radius: 0 !important;
-        }
-        .qp-buttons button:hover { border-color: var(--accent); }
-        .qp-btn-clear {
-            border-color: var(--danger) !important;
-            color: var(--danger) !important;
-        }
-        .qp-btn-auth {
-            background: transparent !important;
-            border-color: var(--accent) !important;
-            color: var(--accent) !important;
-            font-weight: 700;
-        }
-        .qp-btn-abort {
-            border-color: var(--border) !important;
-            color: var(--muted) !important;
-        }
-        .qp-footer-meta {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 10px;
-            color: var(--muted);
-        }
-        .qp-github {
-            color: var(--accent);
-            text-decoration: none;
-        }
-
-        /* ── FLOATING DRAG CHIP (replaces embedded top-bar buttons) ── */
+        /* ── FLOATING DRAG CHIP ── */
         .qp-chip {
             position: fixed;
             left: 50%; bottom: 18px;
             transform: translateX(-50%);
-            display: flex; align-items: center; gap: 4px;
-            background: #3d3d3d;
-            border: 1px solid #545454;
-            border-radius: 0 !important;
-            padding: 5px;
+            display: flex; align-items: center; gap: 6px;
+            background: #fff;
+            border-radius: 999px !important;
+            padding: 6px;
             z-index: 99998;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.45);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif !important;
+            box-shadow: 0 8px 24px rgba(43,39,64,.18), 0 2px 6px rgba(0,0,0,.08);
+            font-family: var(--qp-font) !important;
             touch-action: none;
         }
-        .qp-chip.qp-chip-dragging { opacity: 0.85; box-shadow: 0 10px 26px rgba(0,0,0,0.6); }
+        .qp-chip.qp-chip-dragging { opacity: 0.85; box-shadow: 0 12px 32px rgba(43,39,64,.3); }
         .qp-chip-grip {
-            width: 14px; height: 24px;
+            width: 18px; height: 34px;
             display: flex; align-items: center; justify-content: center;
-            color: #8a8a8a; font-size: 12px; letter-spacing: -1px;
+            color: #c5c1d6; font: 800 13px/1 var(--qp-font); letter-spacing: -1px;
             cursor: grab; flex-shrink: 0; user-select: none;
         }
         .qp-chip-grip:active { cursor: grabbing; }
         .qp-chip-fill {
-            background: #E8C97E !important; color: #1a1a1a !important;
-            font-weight: 700; font-size: 12px; text-transform: uppercase;
-            padding: 8px 14px !important; white-space: nowrap;
+            border: none; cursor: pointer;
+            background: var(--qp-accent) !important; color: #fff !important;
+            border-radius: 999px !important; padding: 9px 18px !important;
+            font: 900 12.5px var(--qp-font) !important;
+            box-shadow: 0 3px 10px rgba(122,107,214,.35);
+            white-space: nowrap;
+            transition: background .15s;
         }
-        .qp-chip-divider { width: 1px; height: 20px; background: #545454; flex-shrink: 0; }
+        .qp-chip-fill:hover { background: #6a5ac6 !important; }
+        .qp-chip-fill:disabled {                  /* busy: queue is running */
+            background: var(--qp-accent-bg) !important; color: var(--qp-accent) !important;
+            box-shadow: none; cursor: default;
+        }
         .qp-chip-gear {
-            width: 34px; height: 34px; padding: 0 !important;
+            border: none; cursor: pointer;
+            width: 34px; height: 34px; border-radius: 50% !important; padding: 0 !important;
+            background: #f4f2fa !important; color: var(--qp-muted) !important;
             display: flex; align-items: center; justify-content: center;
         }
+        .qp-chip-gear:hover { background: #e9e5f6 !important; }
 
-        /* ── TOASTS + CONFIRM DIALOG ── */
+        /* ── TOASTS ── */
         .qp-toast-wrap {
             position: fixed;
             bottom: 70px; left: 50%;
             transform: translateX(-50%);
             z-index: 100000;
-            display: flex; flex-direction: column; gap: 6px; align-items: center;
+            display: flex; flex-direction: column-reverse; gap: 8px; align-items: center;
             pointer-events: none;
         }
         .qp-toast {
-            background: #14140f;
-            color: #c8f5cf;
-            border: 1px solid #545454;
-            padding: 8px 14px;
-            font-size: 12px;
-            font-family: ui-monospace, 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
-            max-width: 90vw;
-            box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+            display: flex; align-items: center; gap: 8px;
+            background: #fff; border-radius: 999px; padding: 8px 16px 8px 10px;
+            box-shadow: 0 6px 18px rgba(43,39,64,.16);
+            font: 800 11.5px/1.3 var(--qp-font); color: var(--qp-ink);
+            max-width: min(320px, calc(100vw - 32px));
+            animation: qp-toast-in .25s cubic-bezier(.2,.9,.3,1.2) both;
         }
-        .qp-toast-error { color: #ffb3ad; border-color: #b3271e; }
-        .qp-toast-success { border-color: #0a7a3d; }
-        .qp-confirm-text {
-            margin: 0;
-            font-size: 12px;
-            line-height: 1.6;
-            white-space: pre-line;
-            color: var(--text);
+        .qp-toast__icon {
+            flex: none; width: 20px; height: 20px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font: 900 12px var(--qp-font);
         }
-        .qp-note {
-            margin: 0;
-            font-size: 10px;
-            line-height: 1.5;
-            color: var(--muted);
-        }
+        .qp-toast-success .qp-toast__icon { background: var(--qp-ok-bg);     color: var(--qp-ok); }
+        .qp-toast-error   .qp-toast__icon { background: var(--qp-danger-bg); color: var(--qp-danger); }
+        .qp-toast-info    .qp-toast__icon { background: var(--qp-warn-bg);   color: var(--qp-warn); font-size: 11px; }
     `;
     document.head.appendChild(style);
 
@@ -617,13 +590,17 @@
     // SVGs
     // =====================================================================
 
-    const addButtonSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3,7.5v11c0,1.38,1.12,2.5,2.5,2.5h1c.83,0,1.5,.67,1.5,1.5s-.67,1.5-1.5,1.5h-1c-3.03,0-5.5-2.47-5.5-5.5V7.5C0,4.47,2.47,2,5.5,2h.35c.56-1.18,1.76-2,3.15-2h2c1.39,0,2.59,.82,3.15,2h.35c1.96,0,3.78,1.05,4.76,2.75,.42,.72,.17,1.63-.55,2.05-.24,.14-.49,.2-.75,.2-.52,0-1.02-.27-1.3-.75-.45-.77-1.28-1.25-2.17-1.25h-.35c-.56,1.18-1.76,2-3.15,2h-2c-1.39,0-2.59-.82-3.15-2h-.35c-1.38,0-2.5,1.12-2.5,2.5Zm14.5,6.5h-1c-.83,0-1.5,.67-1.5,1.5s.67,1.5,1.5,1.5h1c.83,0,1.5-.67,1.5-1.5s-.67-1.5-1.5-1.5Zm6.5-.5v6c0,2.48-2.02,4.5-4.5,4.5h-5c-2.48,0-4.5-2.02-4.5-4.5v-6c0-2.48,2.02-4.5,4.5-4.5h5c2.48,0,4.5,2.02,4.5,4.5Zm-3,0c0-.83-.67-1.5-1.5-1.5h-5c-.83,0-1.5,.67-1.5,1.5v6c0,.83,.67,1.5,1.5,1.5h5c.83,0,1.5-.67,1.5-1.5v-6Z"/></svg>`;
-    const refreshSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12,2C6.48,2,2,6.48,2,12s4.48,10,10,10,10-4.48,10-10S17.52,2,12,2Zm0,18c-4.41,0-8-3.59-8-8s3.59-8,8-8,8,3.59,8,8-3.59,8-8,8Zm-1-13h2v6h-2v-6Zm0,8h2v2h-2v-2Z"/><path d="M13,7v6h4l-5,5-5-5h4V7h2Z" transform="translate(0,-1)"/></svg>`;
+    const addButtonSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
+    const refreshSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>`;
 
     const eyeSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`;
     const eyeOffSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
 
-    const gearSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M19.14,12.94c.04-.3,.06-.61,.06-.94s-.02-.64-.06-.94l2.03-1.58c.18-.14,.23-.41,.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39,.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24,0-.43,.17-.47,.41l-.36,2.54c-.59,.24-1.13,.57-1.62,.94l-2.39-.96c-.22-.08-.47,0-.59,.22l-1.92,3.32c-.12,.21-.08,.47,.12,.61l2.03,1.58c-.04,.3-.06,.62-.06,.94s.02,.64,.06,.94l-2.03,1.58c-.18,.14-.23,.41-.12,.61l1.92,3.32c.12,.22,.37,.29,.59,.22l2.39-.96c.5,.38,1.03,.7,1.62,.94l.36,2.54c.05,.24,.24,.41,.48,.41h3.84c.24,0,.44-.17,.47-.41l.36-2.54c.59-.24,1.13-.56,1.62-.94l2.39,.96c.22,.08,.47,0,.59-.22l1.92-3.32c.12-.22,.07-.47-.12-.61l-2.02-1.58Zm-7.14,2.44c-1.86,0-3.38-1.52-3.38-3.38s1.52-3.38,3.38-3.38,3.38,1.52,3.38,3.38-1.52,3.38-3.38,3.38Z"/></svg>`;
+    const gearSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>`;
+
+    // Header badge icons (accent-stroked, per the pastel design system)
+    const keyBadgeSVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2m-4 4 3 3"/></svg>`;
+    const gearBadgeSVG = `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>`;
 
     // =====================================================================
     // UI HELPERS
@@ -680,7 +657,13 @@
         const toast = document.createElement('div');
         toast.className = `qp-toast qp-toast-${kind}`;
         toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
-        toast.textContent = message;
+        const icon = document.createElement('span');
+        icon.className = 'qp-toast__icon';
+        icon.textContent = kind === 'success' ? '✓' : kind === 'error' ? '!' : 'i';
+        const text = document.createElement('span');
+        text.textContent = message;
+        toast.appendChild(icon);
+        toast.appendChild(text);
         toastWrap.appendChild(toast);
         setTimeout(() => toast.remove(), duration);
     }
@@ -691,19 +674,20 @@
      */
     function qpConfirm(message, opts = {}) {
         return new Promise((resolve) => {
+            const rw = opts.kind === 'rw';
             const overlay = document.createElement('div');
             overlay.className = 'qp-overlay';
             overlay.innerHTML = `
                 <div class="qp-modal">
-                    <header class="qp-header">
-                        <h1>${opts.title || 'CONFIRM'}<span class="qp-cursor"></span></h1>
-                        <div class="qp-gold-rule"></div>
-                    </header>
-                    <div class="qp-body"><p class="qp-confirm-text"></p></div>
-                    <div class="qp-footer">
-                        <div class="qp-buttons">
-                            <button class="qp-btn-auth" data-qp="ok">${opts.confirmText || 'CONFIRM'}</button>
-                            <button class="qp-btn-abort" data-qp="cancel">CANCEL</button>
+                    <div class="qp-head">
+                        <div class="qp-head__badge ${rw ? 'qp-head__badge--rw' : 'qp-head__badge--warn'}">${rw ? '🗡️<span class="qp-rw-dot"></span>' : '⚠️'}</div>
+                        <div class="qp-head__title">${opts.title || 'Confirm'}</div>
+                    </div>
+                    <div class="qp-body">
+                        <p class="qp-confirm-text"></p>
+                        <div class="qp-btn-row">
+                            <button class="qp-btn qp-btn--ghost" data-qp="cancel">Cancel</button>
+                            <button class="qp-btn ${rw ? 'qp-btn--rw' : 'qp-btn--primary'}" data-qp="ok">${opts.confirmText || 'Confirm'}</button>
                         </div>
                     </div>
                 </div>
@@ -728,28 +712,27 @@
         overlay.className = 'qp-overlay';
         overlay.innerHTML = `
             <div class="qp-modal">
-                <header class="qp-header">
-                    <h1><span>QUICK</span><span>PRICER</span><span class="qp-cursor"></span></h1>
-                    <p>API AUTHORIZATION REQUIRED</p>
-                    <div class="qp-gold-rule"></div>
-                </header>
+                <div class="qp-head">
+                    <div class="qp-head__badge">${keyBadgeSVG}</div>
+                    <div>
+                        <div class="qp-head__title">Quick Pricer</div>
+                        <div class="qp-head__sub">Needs your public API key</div>
+                    </div>
+                    <button class="qp-close" id="qpCancel" aria-label="Close">✕</button>
+                </div>
                 <div class="qp-body">
-                    <div class="qp-card">
-                        <label>API KEY</label>
-                        <div class="qp-input-wrap">
-                            <input type="password" id="qpApiKey" placeholder="ENTER KEY" aria-label="Torn API key" />
+                    <div>
+                        <div class="qp-label">PUBLIC API KEY</div>
+                        <div class="qp-field">
+                            <input type="password" id="qpApiKey" placeholder="ENTER KEY" autocomplete="off" spellcheck="false" aria-label="Torn API key" />
                             <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
-                    <p class="qp-note">A <strong>Public</strong>-level key is all this script needs — it only reads
-                    item market data. Create one at Torn &gt; Settings &gt; API Keys &gt; Create Key &gt; Public.
-                    Don't paste a Full Access key into third-party scripts.</p>
-                </div>
-                <div class="qp-footer">
-                    <div class="qp-buttons">
-                        <button class="qp-btn-auth" id="qpSave">AUTHORIZE</button>
-                        <button class="qp-btn-abort" id="qpCancel">CLOSE</button>
-                    </div>
+                    <div class="qp-note"><span>🔒</span><span>A <strong>Public</strong>-level key is enough — the script
+                    only reads item market prices. Create one at Torn &gt; Settings &gt; API Keys &gt; Create Key &gt; Public.
+                    Never paste a Full Access key into third-party scripts.</span></div>
+                    <button class="qp-btn qp-btn--primary" id="qpSave">Authorize</button>
+                    <a class="qp-help" href="https://www.torn.com/preferences.php#tab=api" target="_blank" rel="noopener">Where do I find my key? →</a>
                 </div>
             </div>
         `;
@@ -781,65 +764,72 @@
         overlay.className = 'qp-overlay';
         overlay.innerHTML = `
             <div class="qp-modal">
-                <header class="qp-header">
-                    <h1><span>QUICK</span><span>PRICER</span><span class="qp-cursor"></span></h1>
-                    <p>BAZAAR MANAGEMENT SUITE</p>
-                    <div class="qp-gold-rule"></div>
-                </header>
+                <div class="qp-head">
+                    <div class="qp-head__badge">${gearBadgeSVG}</div>
+                    <div>
+                        <div class="qp-head__title">Quick Pricer settings</div>
+                        <div class="qp-head__sub">v${VERSION} · <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" rel="noopener">GitHub</a></div>
+                    </div>
+                    <button class="qp-close" id="qpCancel" aria-label="Close">✕</button>
+                </div>
                 <div class="qp-body">
-                    <div class="qp-card">
-                        <label>API KEY</label>
-                        <div class="qp-input-wrap">
-                            <input type="password" id="qpApiKey" aria-label="Torn API key" />
+                    <div>
+                        <div class="qp-label">API KEY</div>
+                        <div class="qp-field">
+                            <input type="password" id="qpApiKey" autocomplete="off" spellcheck="false" aria-label="Torn API key" />
                             <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
                         </div>
                     </div>
-                    <p class="qp-note">A <strong>Public</strong>-level key is enough — the script only reads item market data.</p>
-                    <div class="qp-card">
-                        <label>DISCOUNT %</label>
-                        <input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" aria-label="Discount percent" />
-                    </div>
-                    <div class="qp-card">
-                        <label>ALERT AT %</label>
-                        <input type="number" id="qpThreshold" value="${CONFIG.priceDiffThreshold}" step="1" min="0" max="1000" aria-label="Ask before applying price changes larger than this percent" />
-                    </div>
-                    <div class="qp-card">
-                        <label>CACHE (MIN)</label>
-                        <input type="number" id="qpCacheMin" value="${CONFIG.cacheTimeoutMin}" step="1" min="1" max="120" aria-label="Price cache lifetime in minutes" />
+                    <div class="qp-note"><span>🔒</span><span>A <strong>Public</strong>-level key is enough — the script only reads item market data.</span></div>
+                    <div class="qp-numgrid">
+                        <label class="qp-numcell">
+                            <span class="qp-numcell__label">DISCOUNT</span>
+                            <span class="qp-numcell__row"><input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" aria-label="Discount percent" /><span class="qp-numcell__unit">%</span></span>
+                        </label>
+                        <label class="qp-numcell">
+                            <span class="qp-numcell__label">ALERT AT</span>
+                            <span class="qp-numcell__row"><input type="number" id="qpThreshold" value="${CONFIG.priceDiffThreshold}" step="1" min="0" max="1000" aria-label="Ask before applying price changes larger than this percent" /><span class="qp-numcell__unit">%</span></span>
+                        </label>
+                        <label class="qp-numcell">
+                            <span class="qp-numcell__label">CACHE</span>
+                            <span class="qp-numcell__row"><input type="number" id="qpCacheMin" value="${CONFIG.cacheTimeoutMin}" step="1" min="1" max="120" aria-label="Price cache lifetime in minutes" /><span class="qp-numcell__unit">min</span></span>
+                        </label>
                     </div>
                     <div class="qp-toggles-card">
                         <div class="qp-toggle-row">
-                            <span>NPC Floor Enforcement</span>
+                            <div>
+                                <span class="qp-toggle-row__name">NPC floor enforcement</span>
+                                <div class="qp-toggle-row__desc">Never price below the NPC sell price</div>
+                            </div>
                             <label class="qp-toggle">
                                 <input type="checkbox" id="qpNpcCheck" ${!CONFIG.disableNpcCheck ? 'checked' : ''} />
                                 <span class="qp-toggle-track"></span>
                             </label>
                         </div>
                         <div class="qp-toggle-row">
-                            <span>Skip RW Weapons</span>
+                            <div>
+                                <span class="qp-toggle-row__name">Skip RW weapons</span>
+                                <div class="qp-toggle-row__desc">Ranked-war weapons have unique pricing</div>
+                            </div>
                             <label class="qp-toggle">
                                 <input type="checkbox" id="qpRwCheck" ${CONFIG.skipRwWeapons ? 'checked' : ''} />
                                 <span class="qp-toggle-track"></span>
                             </label>
                         </div>
                         <div class="qp-toggle-row">
-                            <span>Skip $1 Items (Update All)</span>
+                            <div>
+                                <span class="qp-toggle-row__name">Skip $1 items</span>
+                                <div class="qp-toggle-row__desc">Update All leaves $1 giveaway listings alone</div>
+                            </div>
                             <label class="qp-toggle">
                                 <input type="checkbox" id="qpDollarCheck" ${CONFIG.skipDollarItems ? 'checked' : ''} />
                                 <span class="qp-toggle-track"></span>
                             </label>
                         </div>
                     </div>
-                </div>
-                <div class="qp-footer">
-                    <div class="qp-buttons">
-                        <button class="qp-btn-clear" id="qpClearCache">CLEAR CACHE</button>
-                        <button class="qp-btn-auth" id="qpSave">AUTHORIZE</button>
-                        <button class="qp-btn-abort" id="qpCancel">CLOSE</button>
-                    </div>
-                    <div class="qp-footer-meta">
-                        <span>v${VERSION}</span>
-                        <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" class="qp-github">GitHub</a>
+                    <div class="qp-btn-row">
+                        <button class="qp-btn qp-btn--danger" id="qpClearCache">Clear cache</button>
+                        <button class="qp-btn qp-btn--primary" id="qpSave" style="flex:1.4;font-size:12.5px">Save settings</button>
                     </div>
                 </div>
             </div>
@@ -858,8 +848,8 @@
         overlay.querySelector('#qpClearCache').onclick = () => {
             clearPriceCache();
             const btn = overlay.querySelector('#qpClearCache');
-            btn.textContent = 'CLEARED';
-            setTimeout(() => { btn.textContent = 'CLEAR CACHE'; }, 1500);
+            btn.textContent = 'Cleared ✓';
+            setTimeout(() => { btn.textContent = 'Clear cache'; }, 1500);
         };
 
         overlay.querySelector('#qpSave').onclick = () => {
@@ -1198,14 +1188,14 @@
                     const direction = newPrice > currentPrice ? 'increase' : 'decrease';
                     const confirmed = await qpConfirm(
                         `${itemName ? itemName + '\n\n' : ''}Price ${direction} detected!\n\nCurrent: $${currentPrice.toLocaleString()}\nNew: $${newPrice.toLocaleString()}\nDifference: ${percentDiff.toFixed(1)}%\n\nUpdate to new price?`,
-                        { title: 'PRICE CHECK', confirmText: 'UPDATE' }
+                        { title: 'Big price change', confirmText: 'Update price' }
                     );
                     if (!confirmed) { resolve('declined'); return; }
                 }
                 priceInput.value = newPrice;
                 priceInput.dispatchEvent(new Event('input', { bubbles: true }));
                 priceInput.dispatchEvent(new Event('change', { bubbles: true }));
-                const borderColor = (sellPrice > 0 && newPrice === sellPrice) ? '#ff9800' : '#5F5F5F';
+                const borderColor = (sellPrice > 0 && newPrice === sellPrice) ? '#f0a35e' : '#7a6bd6';
                 priceInput.style.border = `2px solid ${borderColor}`;
                 setTimeout(() => priceInput.style.border = '', 1000);
                 resolve('updated');
@@ -1257,7 +1247,7 @@
         const rwInfo = getRWBonusInfo(manageItem);
         const { btnContainer, btnInput } = buildItemButton(rwInfo, {
             containerClass: 'quick-update-price-btn',
-            buttonClass: 'qp-btn qp-btn-update',
+            buttonClass: 'qp-item-btn',
             svg: refreshSVG,
             normalTitle: 'Update Price'
         });
@@ -1420,9 +1410,8 @@
         chipEl.className = 'qp-chip';
         chipEl.innerHTML = `
             <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">⋮⋮</div>
-            <button class="qp-btn qp-chip-fill" id="qpChipFill">Quick Fill</button>
-            <div class="qp-chip-divider"></div>
-            <button class="qp-btn qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${gearSVG}</button>
+            <button class="qp-chip-fill" id="qpChipFill">Quick Fill</button>
+            <button class="qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${gearSVG}</button>
         `;
         document.body.appendChild(chipEl);
         chipFillBtn = chipEl.querySelector('#qpChipFill');
@@ -1547,7 +1536,7 @@
         const rwInfo = getRWBonusInfo(itemElement);
         const { btnContainer, btnInput } = buildItemButton(rwInfo, {
             containerClass: 'quick-price-btn',
-            buttonClass: 'qp-btn',
+            buttonClass: 'qp-item-btn',
             svg: addButtonSVG,
             normalTitle: 'Quick Add / Undo'
         });
