@@ -88,6 +88,22 @@ describe('calculateFinalPrice', () => {
         expect(QP.calculateFinalPrice(1000, 0, 150)).toBeGreaterThanOrEqual(0);
         expect(QP.calculateFinalPrice(1000, 0, -50)).toBe(1000);
     });
+
+    it('prices above market when priceBelowMarket is off (markup)', () => {
+        const { QP } = loadScript({ priceBelowMarket: false });
+        expect(QP.calculateFinalPrice(1000, 0, 10)).toBe(1100);
+        expect(QP.calculateFinalPrice(1000, 0, 0)).toBe(1000);
+    });
+
+    it('applies the 99.9% ceiling to markups too', () => {
+        const { QP } = loadScript({ priceBelowMarket: false });
+        expect(QP.calculateFinalPrice(1000, 0, 150)).toBe(1999);
+    });
+
+    it('never floors a markup at the NPC sell price', () => {
+        const { QP } = loadScript({ priceBelowMarket: false });
+        expect(QP.calculateFinalPrice(1000, 950, 10)).toBe(1100);
+    });
 });
 
 describe('getItemIdFromImage', () => {
@@ -207,6 +223,14 @@ describe('settings storage', () => {
         const { QP } = loadScript();
         expect(QP.CONFIG.skipDollarItems).toBe(true);
         expect(QP.CONFIG.priceDiffThreshold).toBe(20);
+    });
+
+    it('defaults to pricing below market and round-trips the flag', () => {
+        const { QP, storage } = loadScript();
+        expect(QP.CONFIG.priceBelowMarket).toBe(true);
+        QP.CONFIG.priceBelowMarket = false;
+        expect(storage.priceBelowMarket).toBe(false);
+        expect(QP.CONFIG.priceBelowMarket).toBe(false);
     });
 
     it('clamps a garbage stored alert threshold on read', () => {
