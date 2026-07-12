@@ -3,6 +3,22 @@
 Releases should be tagged (`v2.9`, …) and published as GitHub Releases when merged
 to `main`, so Greasy Fork users can diff versions and roll back easily.
 
+## 2.9.3 — 2026-07-12
+
+Restores above-market pricing (driven by tester feedback — a negative discount used to
+list items above market value, and the 2.9-era `0–99.9%` clamp silently removed it,
+pricing at market value instead).
+
+- **New "Undercut market" toggle** in settings chooses the direction of the percentage:
+  on (default) prices **N% below** market — a discount, exactly as before; off prices
+  **N% above** market — a markup. You now enter a positive percentage and flip the toggle
+  instead of typing a negative discount that got clamped away.
+- The number-cell label flips between **DISCOUNT** and **MARKUP** as you toggle, so the
+  active direction is always visible.
+- The `0–99.9%` ceiling still applies, now in both directions — a markup tops out at
+  +99.9% (≈2× market value). Below-market prices are still floored at the NPC sell price;
+  that floor can't affect a markup.
+
 ## 2.9.2 — 2026-07-12
 
 UI-only release — no functional changes.

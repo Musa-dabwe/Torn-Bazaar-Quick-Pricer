@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.9.2
+// @version      2.9.3
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -26,7 +26,7 @@
         return;
     }
 
-    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.2';
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.3';
 
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
@@ -96,6 +96,12 @@
         // batch runs must not "correct" them to market value.
         get skipDollarItems() { return getSetting('skipDollarItems', true); },
         set skipDollarItems(val) { setSetting('skipDollarItems', val); },
+        // Direction of the percentage adjustment: true = N% below market (discount,
+        // the default), false = N% above market (markup). Replaces the old "type a
+        // negative discount" trick that got clamped away — the magnitude is always a
+        // positive 0–99.9% and this flag chooses the sign.
+        get priceBelowMarket() { return getSetting('priceBelowMarket', true); },
+        set priceBelowMarket(val) { setSetting('priceBelowMarket', val); },
         get priceDiffThreshold() { return clampThreshold(getSetting('priceDiffThreshold', 20)); },
         set priceDiffThreshold(val) { setSetting('priceDiffThreshold', clampThreshold(val)); },
         get cacheTimeoutMin() { return getSetting('cacheTimeoutMin', 5); },
@@ -783,8 +789,8 @@
                     <div class="qp-note"><span>🔒</span><span>A <strong>Public</strong>-level key is enough — the script only reads item market data.</span></div>
                     <div class="qp-numgrid">
                         <label class="qp-numcell">
-                            <span class="qp-numcell__label">DISCOUNT</span>
-                            <span class="qp-numcell__row"><input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" aria-label="Discount percent" /><span class="qp-numcell__unit">%</span></span>
+                            <span class="qp-numcell__label" id="qpDiscountLabel">${CONFIG.priceBelowMarket ? 'DISCOUNT' : 'MARKUP'}</span>
+                            <span class="qp-numcell__row"><input type="number" id="qpDiscount" value="${CONFIG.defaultDiscount}" step="0.1" min="0" max="99.9" aria-label="Percent below or above market" /><span class="qp-numcell__unit">%</span></span>
                         </label>
                         <label class="qp-numcell">
                             <span class="qp-numcell__label">ALERT AT</span>
@@ -826,6 +832,16 @@
                                 <span class="qp-toggle-track"></span>
                             </label>
                         </div>
+                        <div class="qp-toggle-row">
+                            <div>
+                                <span class="qp-toggle-row__name">Undercut market</span>
+                                <div class="qp-toggle-row__desc">On: price below market · Off: above market</div>
+                            </div>
+                            <label class="qp-toggle">
+                                <input type="checkbox" id="qpBelowMarket" ${CONFIG.priceBelowMarket ? 'checked' : ''} />
+                                <span class="qp-toggle-track"></span>
+                            </label>
+                        </div>
                     </div>
                     <div class="qp-btn-row">
                         <button class="qp-btn qp-btn--danger" id="qpClearCache">Clear cache</button>
@@ -838,6 +854,14 @@
         wireToggleRowLabel(overlay, 'qpNpcCheck');
         wireToggleRowLabel(overlay, 'qpRwCheck');
         wireToggleRowLabel(overlay, 'qpDollarCheck');
+        wireToggleRowLabel(overlay, 'qpBelowMarket');
+
+        // Keep the number-cell label honest about which direction the % applies.
+        const belowMarketToggle = overlay.querySelector('#qpBelowMarket');
+        const discountLabel = overlay.querySelector('#qpDiscountLabel');
+        belowMarketToggle.addEventListener('change', () => {
+            discountLabel.textContent = belowMarketToggle.checked ? 'DISCOUNT' : 'MARKUP';
+        });
 
         const apiInput = overlay.querySelector('#qpApiKey');
         // Set via DOM, never string-interpolated into HTML: a malformed stored value
@@ -864,6 +888,7 @@
             CONFIG.disableNpcCheck = !overlay.querySelector('#qpNpcCheck').checked;
             CONFIG.skipRwWeapons = overlay.querySelector('#qpRwCheck').checked;
             CONFIG.skipDollarItems = overlay.querySelector('#qpDollarCheck').checked;
+            CONFIG.priceBelowMarket = overlay.querySelector('#qpBelowMarket').checked;
             CONFIG.cacheTimeoutMin = Math.min(Math.max(parseInt(overlay.querySelector('#qpCacheMin').value, 10) || 5, 1), 120);
             overlay.remove();
             qpToast('Settings saved', 'success');
@@ -1042,11 +1067,17 @@
     // =====================================================================
 
     /**
-     * Market value minus discount, floored at the NPC sell price unless the
-     * user disabled floor enforcement.
+     * Market value adjusted by the discount magnitude: N% below market when
+     * priceBelowMarket is on (the default), N% above market (a markup) when it's
+     * off. The magnitude is clamped to 0–99.9% in both directions, so a markup
+     * tops out at +99.9% (≈2× market). Below-market results are floored at the
+     * NPC sell price unless the user disabled floor enforcement; that floor can
+     * never trigger for a markup (the price is already ≥ market ≥ sell price).
      */
     function calculateFinalPrice(marketValue, sellPrice, discount) {
-        let finalPrice = Math.round(marketValue * (1 - clampDiscount(discount) / 100));
+        const pct = clampDiscount(discount) / 100;
+        const multiplier = CONFIG.priceBelowMarket ? (1 - pct) : (1 + pct);
+        let finalPrice = Math.round(marketValue * multiplier);
         if (!CONFIG.disableNpcCheck && sellPrice > 0 && finalPrice < sellPrice) {
             log(`Price ${finalPrice} below NPC sell price ${sellPrice}, adjusting...`);
             finalPrice = sellPrice;
