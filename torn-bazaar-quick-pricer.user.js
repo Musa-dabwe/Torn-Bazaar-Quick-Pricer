@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.9.3
+// @version      2.9.4
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -26,7 +26,7 @@
         return;
     }
 
-    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.3';
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.10.0';
 
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
@@ -81,7 +81,11 @@
     })();
 
     const CONFIG = {
-        get defaultDiscount() { return getSetting('discountPercent', 0); },
+        // Clamped on READ as well as write: GM storage is script-private, but a
+        // value edited by hand in the storage editor (or written by an older
+        // version) must still come out sane — these feed straight into price
+        // arithmetic and into value="" attributes in the settings HTML.
+        get defaultDiscount() { return clampDiscount(getSetting('discountPercent', 0)); },
         set defaultDiscount(val) { setSetting('discountPercent', val); },
         get apiKey() {
             const k = getSetting('tornApiKey', '');
@@ -104,7 +108,10 @@
         set priceBelowMarket(val) { setSetting('priceBelowMarket', val); },
         get priceDiffThreshold() { return clampThreshold(getSetting('priceDiffThreshold', 20)); },
         set priceDiffThreshold(val) { setSetting('priceDiffThreshold', clampThreshold(val)); },
-        get cacheTimeoutMin() { return getSetting('cacheTimeoutMin', 5); },
+        get cacheTimeoutMin() {
+            const n = parseInt(getSetting('cacheTimeoutMin', 5), 10);
+            return Number.isFinite(n) ? Math.min(Math.max(n, 1), 120) : 5;
+        },
         set cacheTimeoutMin(val) { setSetting('cacheTimeoutMin', val); },
         get cacheTimeout() { return Math.max(1, this.cacheTimeoutMin) * 60 * 1000; }
     };
@@ -115,7 +122,24 @@
     // batch runs don't re-serialize the whole object once per item)
     // =====================================================================
 
-    let priceCache = GM_getValue('priceCache', {});
+    // Validate the persisted cache field-by-field on load: entries flow into
+    // price arithmetic and then into input.value, so a malformed entry (hand-
+    // edited storage, older version's schema) must be dropped, not propagated
+    // as NaN into a live bazaar listing.
+    let priceCache = (() => {
+        const raw = GM_getValue('priceCache', {});
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+        const clean = {};
+        for (const [id, e] of Object.entries(raw)) {
+            if (e && typeof e === 'object' &&
+                Number.isFinite(e.marketValue) &&
+                Number.isFinite(e.sellPrice) &&
+                Number.isFinite(e.timestamp)) {
+                clean[id] = { marketValue: e.marketValue, sellPrice: e.sellPrice, timestamp: e.timestamp };
+            }
+        }
+        return clean;
+    })();
     let priceCachePersistTimer = null;
 
     (function pruneStalePrices() {
@@ -281,13 +305,12 @@
     ['#qp-style', '#qp-font', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
         document.querySelectorAll(sel).forEach(el => el.remove()));
 
-    // Nunito is the shared display face of the pastel design system
-    // (see docs/pastel-theme.md) — falls back to system-ui if blocked.
-    const fontLink = document.createElement('link');
-    fontLink.id = 'qp-font';
-    fontLink.rel = 'stylesheet';
-    fontLink.href = 'https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap';
-    document.head.appendChild(fontLink);
+    // No third-party font request (matches the Item Finder v1.1 security pass):
+    // loading fonts.googleapis.com from inside torn.com leaked every user's IP
+    // and referrer to Google on each bazaar visit. The pastel design system
+    // (docs/pastel-theme.md) now rides on the system display stack.
+    // '#qp-font' stays in the cleanup sweep above so upgrades remove the link
+    // element an older installed version may have left behind.
 
     const style = document.createElement('style');
     style.id = 'qp-style';
@@ -308,7 +331,7 @@
             --qp-warn-bg:   #fdf6ec;
             --qp-rw:        #f0a35e;
             --qp-rw-bg:     #fdeeda;
-            --qp-font: 'Nunito', system-ui, sans-serif;
+            --qp-font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
         }
 
         @keyframes qp-pop-spring {
@@ -713,6 +736,39 @@
     // UI — API KEY PROMPT
     // =====================================================================
 
+    /**
+     * Verify a key against the Torn API and REFUSE anything above Public Only.
+     * The key prompt tells players "Never paste a Full Access key into
+     * third-party scripts" — this makes that a rule the script enforces rather
+     * than advice it prints. key/?selections=info is itself a public selection,
+     * so any working key can answer it. Also catches well-formed-but-wrong keys
+     * at save time instead of as error 2 halfway through a batch run.
+     * @returns {Promise<void>} resolves if the key is acceptable
+     */
+    function verifyKeyAccessLevel(key) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: `https://api.torn.com/key/?selections=info&key=${encodeURIComponent(key)}&comment=BazaarQuickPricer`,
+                timeout: 15000,
+                onload: (response) => {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.error) { reject(new Error(data.error.error || 'Torn rejected that key')); return; }
+                        const level = Number(data.access_level);
+                        if (Number.isFinite(level) && level > 1) {
+                            reject(new Error(`That's a ${data.access_type || 'higher-access'} key — this script only needs Public Only. Please create one of those instead.`));
+                            return;
+                        }
+                        resolve();
+                    } catch (e) { reject(new Error('Could not verify the key — try again')); }
+                },
+                onerror: () => reject(new Error('Could not reach the Torn API to verify the key')),
+                ontimeout: () => reject(new Error('Key verification timed out — try again'))
+            });
+        });
+    }
+
     function showApiKeyPrompt() {
         const overlay = document.createElement('div');
         overlay.className = 'qp-overlay';
@@ -747,16 +803,26 @@
         const apiInput = overlay.querySelector('#qpApiKey');
         wireEyeToggle(overlay, apiInput);
 
-        overlay.querySelector('#qpSave').onclick = () => {
+        const saveBtn = overlay.querySelector('#qpSave');
+        saveBtn.onclick = async () => {
             const key = apiInput.value.trim();
-            if (isValidApiKey(key)) {
+            if (!isValidApiKey(key)) {
+                qpToast('Please enter a valid 16-character alphanumeric API key', 'error');
+                return;
+            }
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Verifying…';
+            try {
+                await verifyKeyAccessLevel(key);
                 CONFIG.apiKey = key;
                 overlay.remove();
                 // No reload needed: the chip, observer, and item buttons are already
                 // wired up; the queue simply starts working once a key exists.
                 qpToast('API key saved', 'success');
-            } else {
-                qpToast('Please enter a valid 16-character alphanumeric API key', 'error');
+            } catch (e) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Authorize';
+                qpToast(e.message, 'error', 6000);
             }
         };
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
@@ -876,11 +942,26 @@
             setTimeout(() => { btn.textContent = 'Clear cache'; }, 1500);
         };
 
-        overlay.querySelector('#qpSave').onclick = () => {
+        const settingsSaveBtn = overlay.querySelector('#qpSave');
+        settingsSaveBtn.onclick = async () => {
             const key = apiInput.value.trim();
             if (key !== '' && !isValidApiKey(key)) {
                 qpToast('API key must be 16 alphanumeric characters (leave empty to clear it)', 'error');
                 return;
+            }
+            // Only round-trip to the API when the key actually changed —
+            // saving unrelated settings shouldn't burn an API call.
+            if (key !== '' && key !== CONFIG.apiKey) {
+                settingsSaveBtn.disabled = true;
+                settingsSaveBtn.textContent = 'Verifying key…';
+                try {
+                    await verifyKeyAccessLevel(key);
+                } catch (e) {
+                    settingsSaveBtn.disabled = false;
+                    settingsSaveBtn.textContent = 'Save settings';
+                    qpToast(e.message, 'error', 6000);
+                    return; // nothing saved — fix the key or clear it, then save again
+                }
             }
             CONFIG.defaultDiscount = clampDiscount(overlay.querySelector('#qpDiscount').value);
             CONFIG.priceDiffThreshold = clampThreshold(overlay.querySelector('#qpThreshold').value);
@@ -989,7 +1070,11 @@
 
         GM_xmlhttpRequest({
             method: 'GET',
-            url: `https://api.torn.com/torn/${itemId}?selections=items&key=${CONFIG.apiKey}`,
+            // encodeURIComponent is technically redundant — CONFIG.apiKey only
+            // ever returns a /^[a-zA-Z0-9]{16}$/ match or '' — but defense in
+            // depth costs nothing, and &comment= attributes this script's
+            // traffic in the player's API usage log.
+            url: `https://api.torn.com/torn/${itemId}?selections=items&key=${encodeURIComponent(CONFIG.apiKey)}&comment=BazaarQuickPricer`,
             timeout: REQUEST_TIMEOUT_MS,
             onload: function(response) {
                 try {
