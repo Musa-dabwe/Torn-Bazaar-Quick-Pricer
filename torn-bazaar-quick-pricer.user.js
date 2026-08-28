@@ -30,6 +30,19 @@
 
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
+    // Current-version changelog, shown in the changelog modal (tap the info bubble
+    // on the main bazaar page). Kept in the script so the release notes travel
+    // with the file instead of living only in CHANGELOG.md.
+    const CHANGELOG = [
+        { version: '2.10.0', date: '2026-08-28', notes: [
+            'The pill-shaped floating chip is now a compact circular bubble that matches your phone’s look.',
+            'Icon and colour adapt to the page: an info icon on the main bazaar view, a fill-state box on Add Items, and a refresh icon on Manage.',
+            'On Add Items the bubble turns pink once every item in the category is filled, so you can see at a glance when a category is done.',
+            'Tap the bubble to open the changelog (main view), quick-fill (Add Items), or update-all (Manage). Long-press to open settings.',
+            'The bubble is fully draggable and remembers its position, and it hides on the Personalize page.',
+        ] }
+    ];
+
     // =====================================================================
     // CONFIGURATION
     // =====================================================================
@@ -302,7 +315,7 @@
 
     // Best-effort cleanup of a previous instance (PDA re-injection / SPA nav
     // without a full reload): sweep any UI the old instance left in the DOM.
-    ['#qp-style', '#qp-font', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
+    ['#qp-style', '#qp-font', '.qp-bubble', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
         document.querySelectorAll(sel).forEach(el => el.remove()));
 
     // No third-party font request (matches the Item Finder v1.1 security pass):
@@ -543,49 +556,57 @@
             color: var(--qp-ink);
         }
 
-        /* ── FLOATING DRAG CHIP ── */
-        .qp-chip {
+        /* changelog modal */
+        .qp-changelog__version { font: 900 14px var(--qp-font); color: var(--qp-ink); margin: 0; display: flex; align-items: baseline; gap: 8px; }
+        .qp-changelog__version span { font: 800 11px var(--qp-font); color: var(--qp-muted); }
+        .qp-changelog__list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .qp-changelog__list li {
+            position: relative; padding-left: 16px;
+            font: 700 12px/1.5 var(--qp-font); color: var(--qp-ink); list-style: none;
+        }
+        .qp-changelog__list li::before {
+            content: "·"; position: absolute; left: 2px; top: 0;
+            color: var(--qp-accent); font-weight: 900; font-size: 16px;
+        }
+
+        /* ── FLOATING BUBBLE ── */
+        .qp-bubble {
             position: fixed;
-            left: 50%; bottom: 18px;
+            left: 50%; bottom: 24px;
             transform: translateX(-50%);
-            display: flex; align-items: center; gap: 6px;
-            background: #fff;
-            border-radius: 999px !important;
-            padding: 6px;
+            width: 52px; height: 52px;
+            border-radius: 50% !important;
+            background: var(--qp-accent);
+            color: #fff;
             z-index: 99998;
-            box-shadow: 0 8px 24px rgba(43,39,64,.18), 0 2px 6px rgba(0,0,0,.08);
-            font-family: var(--qp-font) !important;
+            box-shadow: 0 10px 26px rgba(122,107,214,.4), 0 2px 6px rgba(0,0,0,.08);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
             touch-action: none;
+            -webkit-user-select: none; user-select: none;
+            transition: background .2s, box-shadow .2s, transform .15s;
         }
-        .qp-chip.qp-chip-dragging { opacity: 0.85; box-shadow: 0 12px 32px rgba(43,39,64,.3); }
-        .qp-chip-grip {
-            width: 18px; height: 34px;
-            display: flex; align-items: center; justify-content: center;
-            color: #c5c1d6; font: 800 13px/1 var(--qp-font); letter-spacing: -1px;
-            cursor: grab; flex-shrink: 0; user-select: none;
+        .qp-bubble:active { transform: translateX(-50%) scale(.94); }
+        .qp-bubble.qp-bubble-dragging {
+            opacity: .9;
+            box-shadow: 0 16px 38px rgba(43,39,64,.32);
+            cursor: grabbing;
         }
-        .qp-chip-grip:active { cursor: grabbing; }
-        .qp-chip-fill {
-            border: none; cursor: pointer;
-            background: var(--qp-accent) !important; color: #fff !important;
-            border-radius: 999px !important; padding: 9px 18px !important;
-            font: 900 12.5px var(--qp-font) !important;
-            box-shadow: 0 3px 10px rgba(122,107,214,.35);
-            white-space: nowrap;
-            transition: background .15s;
+        .qp-bubble.qp-bubble-busy { cursor: progress; }
+        .qp-bubble-progress {
+            font: 900 11px/1 var(--qp-font); color: #fff; user-select: none;
         }
-        .qp-chip-fill:hover { background: #6a5ac6 !important; }
-        .qp-chip-fill:disabled {                  /* busy: queue is running */
-            background: var(--qp-accent-bg) !important; color: var(--qp-accent) !important;
-            box-shadow: none; cursor: default;
+        .qp-bubble svg {
+            width: 26px; height: 26px;
+            fill: #fff;
+            pointer-events: none;
         }
-        .qp-chip-gear {
-            border: none; cursor: pointer;
-            width: 34px; height: 34px; border-radius: 50% !important; padding: 0 !important;
-            background: #f4f2fa !important; color: var(--qp-muted) !important;
-            display: flex; align-items: center; justify-content: center;
+        /* filled state on the add-items page: reddish-pink, empty-box icon */
+        .qp-bubble.qp-bubble-filled {
+            background: #e8467c;
+            box-shadow: 0 10px 26px rgba(232,70,124,.4), 0 2px 6px rgba(0,0,0,.08);
         }
-        .qp-chip-gear:hover { background: #e9e5f6 !important; }
+        .qp-bubble.qp-bubble-hidden { display: none; }
 
         /* ── TOASTS ── */
         .qp-toast-wrap {
@@ -625,11 +646,16 @@
     const eyeSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`;
     const eyeOffSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
 
-    const gearSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>`;
-
     // Header badge icons (accent-stroked, per the pastel design system)
     const keyBadgeSVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2m-4 4 3 3"/></svg>`;
     const gearBadgeSVG = `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>`;
+
+    // Floating-bubble icons (see docs/assets/). Rendered centred inside .qp-bubble;
+    // the bubble's own CSS colours them via fill: currentColor-white on the svg.
+    const bubbleInfoSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12,0A12,12,0,1,0,24,12,12.013,12.013,0,0,0,12,0Zm0,21a9,9,0,1,1,9-9A9.011,9.011,0,0,1,12,21Z"/><path d="M11.545,9.545h-.3A1.577,1.577,0,0,0,9.64,10.938,1.5,1.5,0,0,0,11,12.532v4.65a1.5,1.5,0,0,0,3,0V12A2.455,2.455,0,0,0,11.545,9.545Z"/><path d="M11.83,8.466A1.716,1.716,0,1,0,10.114,6.75,1.715,1.715,0,0,0,11.83,8.466Z"/></svg>`;
+    const bubbleBoxFullSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.61,10.836l-1.718-3.592c-.218-.455-.742-.678-1.219-.517l-8.677,2.896L3.307,6.728c-.477-.159-1.001,.062-1.219,.518L.436,10.719c-.477,.792-.567,1.743-.247,2.609,.31,.84,.964,1.491,1.801,1.795l-.006,2.315c0,2.157,1.373,4.065,3.419,4.747l4.365,1.456c.714,.237,1.464,.356,2.214,.356s1.5-.119,2.214-.357l4.369-1.456c2.044-.682,3.418-2.586,3.419-4.738l.006-2.322c.846-.296,1.508-.945,1.819-1.788,.316-.858,.228-1.8-.198-2.5Zm-21.416,.83l1.318-2.763,7.065,2.354-1.62,3.256c-.242,.406-.729,.584-1.174,.436l-5.081-1.695c-.298-.099-.53-.324-.639-.618-.108-.293-.078-.616,.13-.97Zm3.842,8.623c-1.228-.41-2.053-1.555-2.052-2.848l.004-1.65,3.164,1.055c1.346,.446,2.793-.09,3.559-1.372l.277-.555-.004,6.979c-.197-.04-.391-.091-.582-.154l-4.365-1.455Zm11.896-.002l-4.369,1.456c-.19,.063-.384,.115-.58,.155l.004-6.995,.319,.64c.557,.928,1.532,1.46,2.562,1.46,.318,0,.643-.051,.96-.157l3.16-1.053-.004,1.651c0,1.292-.825,2.435-2.052,2.844Zm4-7.645c-.105,.285-.331,.504-.619,.601l-5.118,1.705c-.438,.147-.935-.036-1.136-.365l-1.654-3.322,7.064-2.357,1.382,2.88c.156,.261,.187,.574,.081,.859ZM5.214,5.896c-.391-.391-.391-1.023,0-1.414L9.111,.586c.779-.779,2.049-.779,2.828,0l1.596,1.596c.753-.385,1.738-.27,2.353,.345l2.255,2.255c.391,.391,.391,1.023,0,1.414s-1.023,.391-1.414,0l-2.255-2.255-3.151,3.151c-.195,.195-.451,.293-.707,.293s-.512-.098-.707-.293c-.391-.391-.391-1.023,0-1.414l2.147-2.147-1.53-1.53-3.897,3.896c-.195,.195-.451,.293-.707,.293s-.512-.098-.707-.293Z"/></svg>`;
+    const bubbleBoxSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M23.576,6.429l-1.91-3.171L12,.036,2.334,3.258,.442,6.397c-.475,.792-.563,1.742-.243,2.607,.31,.839,.964,1.488,1.8,1.793l-.008,9.844,10,3.333,10-3.333,.008-9.844c.846-.296,1.507-.946,1.819-1.788,.317-.857,.229-1.797-.242-2.582Zm-5.737-2.338l-5.831,1.946-5.833-1.951,5.825-1.942,5.839,1.946ZM2.156,7.428l1.292-2.145,7.048,2.357-1.529,2.549c-.239,.398-.735,.581-1.173,.434l-5.081-1.693c-.297-.099-.53-.324-.639-.618-.108-.293-.079-.616,.082-.883Zm1.843,4.038l3.163,1.054c1.343,.448,2.792-.088,3.521-1.302l.316-.526-.005,10.843-7-2.333,.006-7.735Zm8.994,10.068l.005-10.849,.319,.532c.556,.928,1.532,1.459,2.561,1.459,.319,0,.643-.051,.96-.157l3.161-1.053-.006,7.734-7,2.333Zm8.95-13.216c-.105,.285-.331,.503-.619,.599l-5.118,1.706c-.438,.147-.934-.035-1.173-.434l-1.526-2.543,7.051-2.353,1.305,2.167c.156,.26,.186,.573,.08,.858Z"/></svg>`;
+    const bubbleRotateSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m19,0H5C2.239,0,0,2.239,0,5v14c0,2.761,2.239,5,5,5h14c2.761,0,5-2.239,5-5V5c0-2.761-2.239-5-5-5Zm-7,20c-3.022,0-5.64-1.697-7-4.177v2.177c0,.552-.448,1-1,1h0c-.552,0-1-.448-1-1v-3c0-1.105.895-2,2-2h3c.552,0,1,.448,1,1h0c0,.552-.448,1-1,1h-1.169c1.039,1.787,2.957,3,5.169,3,2.722,0,5.02-1.823,5.751-4.312.122-.414.515-.688.947-.688h0c.653,0,1.156.622,.972,1.249-.973,3.319-4.041,5.751-7.671,5.751Zm9-11c0,1.105-.895,2-2,2h-3c-.552,0-1-.448-1-1h0c0-.552,.448-1,1-1h1.185c-1.037-1.791-2.97-3-5.185-3-2.722,0-5.02,1.823-5.751,4.312-.122,.414-.515,.688-.947,.688h0c-.653,0-1.156-.622-.972-1.249.973-3.319,4.041-5.751,7.671-5.751,3.015,0,5.639,1.679,7,4.15v-2.15c0-.552,.448-1,1-1h0c.552,0,1,.448,1,1v3Z"/></svg>`;
 
     // =====================================================================
     // UI HELPERS
@@ -761,7 +787,7 @@
                             return;
                         }
                         resolve();
-                    } catch (e) { reject(new Error('Could not verify the key — try again')); }
+                    } catch { reject(new Error('Could not verify the key — try again')); }
                 },
                 onerror: () => reject(new Error('Could not reach the Torn API to verify the key')),
                 ontimeout: () => reject(new Error('Key verification timed out — try again'))
@@ -829,6 +855,33 @@
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
         apiInput.focus();
+    }
+
+    function showChangelog() {
+        const overlay = document.createElement('div');
+        overlay.className = 'qp-overlay';
+        const entry = CHANGELOG[0] || { version: VERSION, date: '', notes: [] };
+        const items = entry.notes.map(n => `<li>${n}</li>`).join('');
+        overlay.innerHTML = `
+            <div class="qp-modal">
+                <div class="qp-head">
+                    <div class="qp-head__badge">${bubbleInfoSVG}</div>
+                    <div class="qp-head__title">What's new</div>
+                    <button class="qp-close" id="qpChangelogClose" aria-label="Close">✕</button>
+                </div>
+                <div class="qp-body">
+                    <div class="qp-head__sub" style="font-size:11.5px">Quick Pricer v${VERSION}</div>
+                    <p class="qp-changelog__version">${entry.version}<span>${entry.date ? ' · ' + entry.date : ''}</span></p>
+                    <ul class="qp-changelog__list">${items}</ul>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        const close = () => overlay.remove();
+        overlay.querySelector('#qpChangelogClose').addEventListener('click', close);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        wireOverlayA11y(overlay, close);
+        overlay.querySelector('#qpChangelogClose').focus();
     }
 
     function showSettingsPanel() {
@@ -1210,6 +1263,7 @@
         if (priceInputs.length === 0) return Promise.resolve(false);
 
         return new Promise((resolve) => {
+            const done = (val) => { updateBubbleState(); resolve(val); };
             fetchItemData(itemId, ({ marketValue, sellPrice }) => {
                 if (marketValue > 0) {
                     const finalPrice = calculateFinalPrice(marketValue, sellPrice, CONFIG.defaultDiscount);
@@ -1233,7 +1287,7 @@
                     }
                     const btn = itemElement.querySelector('.quick-price-btn button');
                     if (btn) { btn.classList.add('qp-btn-red'); btn.dataset.mode = 'undo'; }
-                    resolve(true);
+                    done(true);
                     return;
                 } else {
                     // Surface the failure on the button instead of silently doing nothing.
@@ -1250,7 +1304,7 @@
                         }, 2500);
                     }
                 }
-                resolve(false);
+                done(false);
             });
         });
     }
@@ -1433,17 +1487,16 @@
     }
 
     async function updateAllManagePrices() {
-        const updateButton = chipFillBtn;
-        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; updateButton.textContent = 'Loading…'; }
-        const restoreButton = () => {
-            if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
-        };
+        // Mark the bubble busy so the user can't start a concurrent run, then show
+        // live progress on the bubble. The bubble functions live below (hoisted).
+        setBubbleBusy(true, '0%');
+        const restore = () => { setBubbleBusy(false); };
 
         // Only the rows Torn has already rendered are processed. If more may be
         // waiting below the fold, we flag it in the summary so the user can
         // scroll to load them and run again (see mayHaveUnloadedItems).
         const items = getManageItems();
-        if (items.length === 0) { restoreButton(); qpToast('No items found to update!', 'error'); return; }
+        if (items.length === 0) { restore(); qpToast('No items found to update!', 'error'); return; }
         const moreBelow = mayHaveUnloadedItems(items);
 
         // Collect the actual work first so progress and totals are accurate.
@@ -1467,13 +1520,13 @@
         let updated = 0, failed = 0, done = 0;
         for (const { priceDiv, itemId, itemName } of work) {
             done++;
-            if (updateButton) updateButton.textContent = `Updating ${done}/${work.length}`;
+            updateBubbleProgress(`${done}/${work.length}`);
             const result = await updateManageItemPrice(priceDiv, itemId, itemName);
             if (result === 'updated') updated++;
             else if (result === 'failed') failed++;
         }
 
-        restoreButton();
+        restore();
         let msg = `Updated ${updated} of ${work.length} item price${work.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
         if (skippedDollar > 0) msg += ` — ${skippedDollar} $1 item${skippedDollar > 1 ? 's' : ''} skipped`;
@@ -1491,138 +1544,248 @@
     // draggable and persisted per player via GM_setValue.)
     // =====================================================================
 
-    let chipEl = null;
-    let chipFillBtn = null;
-    let chipContext = null; // 'add' | 'manage' | null
+    // FLOATING BUBBLE  (a single circular draggable icon, replacing the old
+    // pill-shaped chip. It lives on document.body as a fixed element so it
+    // can't be hidden by a layout it doesn't belong to, is draggable (Pointer
+    // Events), and its icon/colour/action are driven by the current sub-page
+    // hash. Position persists per player via GM_setValue('chipPosition', ...).)
+    // =====================================================================
 
-    function clampChipPosition(x, y) {
-        const rect = chipEl.getBoundingClientRect();
+    let bubbleEl = null;
+    let bubbleBusy = false;          // a batch run is in progress — block re-entry
+
+    const BUBBLE_LONG_PRESS_MS = 350;
+    const BUBBLE_DRAG_THRESHOLD = 6; // px of movement before a press becomes a drag
+
+    function getBubbleTab() {
+        const h = (window.location.hash || '').trim();
+        if (h.startsWith('#/add')) return 'add';
+        if (h.startsWith('#/manage')) return 'manage';
+        if (h.startsWith('#/personalize')) return 'personalize';
+        return 'main';
+    }
+
+    function clampBubblePosition(x, y) {
+        const rect = bubbleEl.getBoundingClientRect();
         const maxX = window.innerWidth - rect.width - 6;
         const maxY = window.innerHeight - rect.height - 6;
         return { x: Math.min(Math.max(x, 6), Math.max(maxX, 6)), y: Math.min(Math.max(y, 6), Math.max(maxY, 6)) };
     }
 
-    function applyChipPosition() {
+    function applyBubblePosition() {
         const pos = GM_getValue('chipPosition', null);
         if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
             // Clamp to the current viewport: a position saved on a large monitor
             // must not restore off-screen on a phone.
-            const { x, y } = clampChipPosition(pos.x, pos.y);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
+            const { x, y } = clampBubblePosition(pos.x, pos.y);
+            bubbleEl.style.left = x + 'px';
+            bubbleEl.style.top = y + 'px';
+            bubbleEl.style.bottom = 'auto';
+            bubbleEl.style.transform = 'none';
         }
         // otherwise leave the CSS default (bottom-center) in place
     }
 
-    function createFloatingChip() {
-        if (chipEl) return;
+    /** True when a single add-items row has a non-empty, non-zero price entered. */
+    function isItemFilled(itemElement) {
+        const priceDiv = itemElement.querySelector(SELECTORS.priceWrap);
+        if (!priceDiv) return false;
+        const inputs = priceDiv.querySelectorAll('input');
+        for (const input of inputs) {
+            const raw = String(input.value || '').trim();
+            if (raw === '') continue;
+            const n = parseInt(raw.replace(/,/g, ''), 10);
+            if (Number.isFinite(n) && n > 0) return true;
+        }
+        return false;
+    }
+
+    /** True when every item in the currently visible category has a price filled. */
+    function isActiveCategoryFilled() {
+        const items = getVisibleItems();
+        if (items.length === 0) return false;
+        return items.every(isItemFilled);
+    }
+
+    /** Reflect the current sub-page on the bubble: icon, background, visibility. */
+    function renderBubbleContent() {
+        if (!bubbleEl) return;
+        if (bubbleBusy) return; // progress text is showing meanwhile
+        const tab = getBubbleTab();
+        bubbleEl.classList.remove('qp-bubble-filled');
+        if (tab === 'personalize') {
+            bubbleEl.classList.add('qp-bubble-hidden');
+            return;
+        }
+        bubbleEl.classList.remove('qp-bubble-hidden');
+        if (tab === 'add') {
+            const filled = isActiveCategoryFilled();
+            bubbleEl.classList.toggle('qp-bubble-filled', filled);
+            bubbleEl.innerHTML = filled ? bubbleBoxSVG : bubbleBoxFullSVG;
+        } else if (tab === 'manage') {
+            bubbleEl.innerHTML = bubbleRotateSVG;
+        } else { // main bazaar view
+            bubbleEl.innerHTML = bubbleInfoSVG;
+        }
+    }
+
+    /** Re-evaluate after the DOM changes / hash changes. */
+    function updateBubbleState() {
+        renderBubbleContent();
+    }
+
+    /** Toggle the busy state (batch run in progress) with optional progress text. */
+    function setBubbleBusy(busy, progressText) {
+        bubbleBusy = busy;
+        if (!bubbleEl) return;
+        bubbleEl.classList.toggle('qp-bubble-busy', busy);
+        if (busy) {
+            bubbleEl.innerHTML = `<span class="qp-bubble-progress">${progressText}</span>`;
+        } else {
+            renderBubbleContent();
+        }
+    }
+
+    function updateBubbleProgress(text) {
+        if (bubbleBusy && bubbleEl) {
+            bubbleEl.innerHTML = `<span class="qp-bubble-progress">${text}</span>`;
+        }
+    }
+
+    function onBubbleTap() {
+        const tab = getBubbleTab();
+        if (tab === 'personalize') { renderBubbleContent(); return; }
+        if (tab === 'main') { showChangelog(); return; }
+        if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+        if (tab === 'manage') updateAllManagePrices();
+        else fillAllItems();
+    }
+
+    function onBubbleLongPress() {
+        const tab = getBubbleTab();
+        if (tab === 'main' || tab === 'add' || tab === 'manage') showSettingsPanel();
+        // 'personalize' has no long-press action (the bubble is hidden there)
+    }
+
+    function createFloatingBubble() {
+        if (bubbleEl) return;
         // Defensive cleanup: if the script gets re-injected (PDA re-injection, SPA route
-        // change) without a full page reload, a previous instance's chip can be orphaned
+        // change) without a full page reload, a previous instance's bubble can be orphaned
         // in the DOM with no reference to clean it up. Sweep those out before making a new one.
-        document.querySelectorAll('.qp-chip').forEach(el => el.remove());
-        chipEl = document.createElement('div');
-        chipEl.className = 'qp-chip';
-        chipEl.innerHTML = `
-            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">⋮⋮</div>
-            <button class="qp-chip-fill" id="qpChipFill">Quick Fill</button>
-            <button class="qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${gearSVG}</button>
-        `;
-        document.body.appendChild(chipEl);
-        chipFillBtn = chipEl.querySelector('#qpChipFill');
+        document.querySelectorAll('.qp-bubble').forEach(el => el.remove());
 
-        applyChipPosition();
+        bubbleEl = document.createElement('div');
+        bubbleEl.className = 'qp-bubble';
+        bubbleEl.setAttribute('role', 'button');
+        bubbleEl.setAttribute('tabindex', '0');
+        bubbleEl.setAttribute('aria-label', 'Quick Pricer');
+        bubbleEl.setAttribute('title', 'Quick Pricer');
+        document.body.appendChild(bubbleEl);
+        renderBubbleContent();
+        applyBubblePosition();
 
-        chipEl.querySelector('#qpChipGear').addEventListener('click', (e) => {
-            e.preventDefault();
-            showSettingsPanel();
-        });
+        // Tap vs long-press vs drag, all on the one bubble surface.
+        let longPressTimer = null;
+        let dragging = false;
+        let didLongPress = false;
+        let startX = 0, startY = 0;
+        let dragOffsetX = 0, dragOffsetY = 0;
 
-        chipFillBtn.addEventListener('click', () => {
-            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
-            if (chipContext === 'manage') updateAllManagePrices();
-            else fillAllItems();
-        });
-
-        // Drag handling via Pointer Events (covers mouse + touch/stylus in one API)
-        const grip = chipEl.querySelector('#qpChipGrip');
-        let dragOffsetX = 0, dragOffsetY = 0, dragging = false;
-
-        grip.addEventListener('pointerdown', (e) => {
-            dragging = true;
-            chipEl.classList.add('qp-chip-dragging');
-            const rect = chipEl.getBoundingClientRect();
-            // Lock in current pixel position before dragging so left/top math is stable
-            chipEl.style.left = rect.left + 'px';
-            chipEl.style.top = rect.top + 'px';
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
+        bubbleEl.addEventListener('pointerdown', (e) => {
+            if (bubbleBusy) return;
+            dragging = false;
+            didLongPress = false;
+            startX = e.clientX; startY = e.clientY;
+            const rect = bubbleEl.getBoundingClientRect();
+            // Lock in the current pixel position before any gesture so left/top math stays stable.
+            bubbleEl.style.left = rect.left + 'px';
+            bubbleEl.style.top = rect.top + 'px';
+            bubbleEl.style.bottom = 'auto';
+            bubbleEl.style.transform = 'none';
             dragOffsetX = e.clientX - rect.left;
             dragOffsetY = e.clientY - rect.top;
-            grip.setPointerCapture(e.pointerId);
+            bubbleEl.setPointerCapture(e.pointerId);
+            bubbleEl.classList.add('qp-bubble-dragging');
+            longPressTimer = setTimeout(() => {
+                longPressTimer = null;
+                didLongPress = true;
+                onBubbleLongPress();
+            }, BUBBLE_LONG_PRESS_MS);
         });
-        grip.addEventListener('pointermove', (e) => {
-            if (!dragging) return;
-            const { x, y } = clampChipPosition(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
-        });
-        const endDrag = (e) => {
-            if (!dragging) return;
-            dragging = false;
-            chipEl.classList.remove('qp-chip-dragging');
-            const rect = chipEl.getBoundingClientRect();
-            GM_setValue('chipPosition', { x: rect.left, y: rect.top });
-        };
-        grip.addEventListener('pointerup', endDrag);
-        grip.addEventListener('pointercancel', endDrag);
 
-        // Keyboard repositioning for the grip (paired with its role="button")
-        grip.addEventListener('keydown', (e) => {
+        bubbleEl.addEventListener('pointermove', (e) => {
+            if (bubbleBusy) return;
+            // Crossing the movement threshold turns the press into a drag and
+            // cancels any pending long-press / tap.
+            if (longPressTimer !== null &&
+                (Math.abs(e.clientX - startX) > BUBBLE_DRAG_THRESHOLD ||
+                 Math.abs(e.clientY - startY) > BUBBLE_DRAG_THRESHOLD)) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                dragging = true;
+                bubbleEl.classList.remove('qp-bubble-dragging');
+            }
+            if (!dragging) return;
+            const { x, y } = clampBubblePosition(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
+            bubbleEl.style.left = x + 'px';
+            bubbleEl.style.top = y + 'px';
+        });
+
+        const endBubbleGesture = () => {
+            if (bubbleBusy) return;
+            if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
+            bubbleEl.classList.remove('qp-bubble-dragging');
+            if (dragging) {
+                dragging = false;
+                const rect = bubbleEl.getBoundingClientRect();
+                GM_setValue('chipPosition', { x: rect.left, y: rect.top });
+                return; // a drag, not a tap
+            }
+            if (!didLongPress) onBubbleTap();
+        };
+        bubbleEl.addEventListener('pointerup', endBubbleGesture);
+        bubbleEl.addEventListener('pointercancel', () => {
+            if (longPressTimer !== null) { clearTimeout(longPressTimer); longPressTimer = null; }
+            bubbleEl.classList.remove('qp-bubble-dragging');
+            dragging = false;
+        });
+
+        // Keyboard repositioning (paired with role="button"), matching the old grip.
+        bubbleEl.addEventListener('keydown', (e) => {
             const step = 10;
             let dx = 0, dy = 0;
             if (e.key === 'ArrowLeft') dx = -step;
             else if (e.key === 'ArrowRight') dx = step;
             else if (e.key === 'ArrowUp') dy = -step;
             else if (e.key === 'ArrowDown') dy = step;
+            else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onBubbleTap(); return; }
             else return;
             e.preventDefault();
-            const rect = chipEl.getBoundingClientRect();
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
-            const { x, y } = clampChipPosition(rect.left + dx, rect.top + dy);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
+            const rect = bubbleEl.getBoundingClientRect();
+            bubbleEl.style.bottom = 'auto';
+            bubbleEl.style.transform = 'none';
+            const { x, y } = clampBubblePosition(rect.left + dx, rect.top + dy);
+            bubbleEl.style.left = x + 'px';
+            bubbleEl.style.top = y + 'px';
             GM_setValue('chipPosition', { x, y });
         });
 
+        bubbleEl.addEventListener('keyup', (e) => {
+            // Let space activate via keydown and not double-fire on keyup.
+            if (e.key === ' ') e.preventDefault();
+        });
+
         window.addEventListener('resize', () => {
-            if (!chipEl) return;
+            if (!bubbleEl) return;
             const pos = GM_getValue('chipPosition', null);
             if (!pos) return;
-            const { x, y } = clampChipPosition(pos.x, pos.y);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
+            const { x, y } = clampBubblePosition(pos.x, pos.y);
+            bubbleEl.style.left = x + 'px';
+            bubbleEl.style.top = y + 'px';
         });
-    }
 
-    function updateChipContext() {
-        if (!chipEl) return;
-        // A running batch owns the button label (progress text) — don't clobber it.
-        if (chipFillBtn && chipFillBtn.disabled) return;
-        const manageCount = getManageItems().length;
-        if (manageCount > 0) {
-            chipContext = 'manage';
-            chipFillBtn.textContent = 'Update All';
-            return;
-        }
-        const addCount = getVisibleItems().length;
-        if (addCount > 0) {
-            chipContext = 'add';
-            chipFillBtn.textContent = 'Quick Fill';
-        }
-        // if neither section has items yet (still loading), keep the last known context
+        // The bazaar is a hash-routed SPA — re-evaluate icon/actions on navigation.
+        window.addEventListener('hashchange', updateBubbleState);
     }
 
     function processManageItems() {
@@ -1679,13 +1842,13 @@
     }
 
     async function fillAllItems() {
-        const fillButton = chipFillBtn;
-        if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Loading…'; }
+        setBubbleBusy(true, '0%');
+        const restore = () => { setBubbleBusy(false); updateBubbleState(); };
         // Same as Update All: only the rows Torn has already rendered are
         // processed; rows below the fold aren't in the DOM until scrolled to.
         const items = getVisibleItems();
         if (items.length === 0) {
-            if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
+            restore();
             qpToast('No items found to fill!', 'error');
             return;
         }
@@ -1695,15 +1858,15 @@
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
             return true;
         });
-        if (fillButton) fillButton.textContent = `Filling 0/${toFill.length}`;
         let completed = 0, filled = 0;
         const promises = toFill.map(item => fillItemPrice(item).then((ok) => {
             completed++;
             if (ok) filled++;
-            if (fillButton) fillButton.textContent = `Filling ${completed}/${toFill.length}`;
+            updateBubbleProgress(`${completed}/${toFill.length}`);
         }));
         await Promise.all(promises);
-        if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
+        // Refresh the bubble's fill-state icon once the batch is done.
+        restore();
         const failedCount = toFill.length - filled;
         let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
@@ -1738,7 +1901,7 @@
             mutationDebounceTimer = setTimeout(() => {
                 processAllItems();
                 processManageItems();
-                updateChipContext();
+                updateBubbleState();
             }, 300);
         });
         bazaarObserver.observe(bazaarRoot, { childList: true, subtree: true });
@@ -1751,8 +1914,8 @@
         processAllItems();
         setupObserver(bazaarRoot);
         processManageItems();
-        createFloatingChip();
-        updateChipContext();
+        createFloatingBubble();
+        updateBubbleState();
         if (!CONFIG.apiKey) showApiKeyPrompt();
     }
 
