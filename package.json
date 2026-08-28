@@ -1,6 +1,6 @@
 {
   "name": "torn-bazaar-quick-pricer",
-  "version": "2.9.3",
+  "version": "2.9.5",
   "private": true,
   "description": "Userscript that auto-fills Torn bazaar items with market-based pricing",
   "license": "MIT",

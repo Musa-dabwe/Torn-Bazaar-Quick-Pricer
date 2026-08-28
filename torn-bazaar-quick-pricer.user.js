@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.9.4
+// @version      2.9.5
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -26,7 +26,7 @@
         return;
     }
 
-    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.10.0';
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.5';
 
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
@@ -34,7 +34,7 @@
     // on the main bazaar page). Kept in the script so the release notes travel
     // with the file instead of living only in CHANGELOG.md.
     const CHANGELOG = [
-        { version: '2.10.0', date: '2026-08-28', notes: [
+        { version: '2.9.5', date: '2026-08-28', notes: [
             'The pill-shaped floating chip is now a compact circular bubble that matches your phone’s look.',
             'Icon and colour adapt to the page: an info icon on the main bazaar view, a fill-state box on Add Items, and a refresh icon on Manage.',
             'On Add Items the bubble turns pink once every item in the category is filled, so you can see at a glance when a category is done.',

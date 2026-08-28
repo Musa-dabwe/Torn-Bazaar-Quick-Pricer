@@ -1,7 +1,22 @@
 # Changelog
 
-Releases should be tagged (`v2.9`, …) and published as GitHub Releases when merged
+Releases should be tagged (`v2.9.5`, …) and published as GitHub Releases when merged
 to `main`, so Greasy Fork users can diff versions and roll back easily.
+
+## 2.9.5 — 2026-08-28
+
+Floating chip → circular bubble redesign (PDA-focused), plus first GitHub Release.
+
+- The pill-shaped **floating chip** is now a compact **circular bubble** that matches
+  your phone's look. Icon and colour adapt to the sub-page hash: an info icon on the
+  main bazaar view, a fill-state box on Add Items, and a refresh icon on Manage.
+- On Add Items the bubble turns **pink once every item in the category is filled**, so
+  you can see at a glance when a category is done.
+- **Tap** the bubble to open the changelog (main view), quick-fill (Add Items), or
+  update-all (Manage); **long-press** to open settings.
+- The bubble is fully **draggable** (Pointer Events) and remembers its position,
+  clamped to the viewport, and it hides on the Personalize page.
+- New **changelog modal** (tap the info bubble) so release notes travel with the script.
 
 ## 2.9.3 — 2026-07-12
 
