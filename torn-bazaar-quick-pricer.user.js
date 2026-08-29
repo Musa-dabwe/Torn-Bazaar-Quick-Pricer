@@ -854,7 +854,6 @@
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
-        apiInput.focus();
     }
 
     function showChangelog() {
@@ -1031,7 +1030,6 @@
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
-        apiInput.focus();
     }
 
     // =====================================================================
@@ -1921,14 +1919,6 @@
 
     let isScriptInitialized = false;
 
-    function init() {
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', checkForBazaar);
-        } else {
-            checkForBazaar();
-        }
-    }
-
     const ROOT_WAIT_TIMEOUT_MS = 20000;
 
     function checkForBazaar() {
@@ -1941,26 +1931,66 @@
             initScript(root);
             return;
         }
-        // Single observer with a hard timeout — @run-at document-end guarantees
-        // document.body exists, and the timeout ensures the observer can't run
-        // forever on a page state that never renders the bazaar.
-        const observer = new MutationObserver(() => {
-            if (isScriptInitialized) { observer.disconnect(); return; }
+
+        // Multi-stage initialization fallback strategy for Torn PDA and various mobile browsers:
+        // 1. MutationObserver on document.body or documentElement
+        let observer = null;
+        const target = document.body || document.documentElement;
+        if (target) {
+            observer = new MutationObserver(() => {
+                if (isScriptInitialized) { observer.disconnect(); return; }
+                const found = findRoot();
+                if (found) {
+                    isScriptInitialized = true;
+                    observer.disconnect();
+                    if (pollingInterval) clearInterval(pollingInterval);
+                    clearTimeout(giveUpTimer);
+                    initScript(found);
+                }
+            });
+            observer.observe(target, { childList: true, subtree: true });
+        }
+
+        // 2. Polling fallback (100ms interval for up to 50 attempts = 5s)
+        let attempts = 0;
+        const pollingInterval = setInterval(() => {
+            if (isScriptInitialized) {
+                clearInterval(pollingInterval);
+                if (observer) observer.disconnect();
+                return;
+            }
+            attempts++;
             const found = findRoot();
             if (found) {
                 isScriptInitialized = true;
-                observer.disconnect();
+                clearInterval(pollingInterval);
+                if (observer) observer.disconnect();
                 clearTimeout(giveUpTimer);
                 initScript(found);
+            } else if (attempts >= 50) {
+                clearInterval(pollingInterval);
             }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
+        }, 100);
+
+        // 3. Hard timeout safeguard
         const giveUpTimer = setTimeout(() => {
             if (!isScriptInitialized) {
-                observer.disconnect();
+                if (observer) observer.disconnect();
+                if (pollingInterval) clearInterval(pollingInterval);
                 console.warn(`[BazaarQuickPricer] Bazaar container not found after ${ROOT_WAIT_TIMEOUT_MS / 1000}s — giving up`);
             }
         }, ROOT_WAIT_TIMEOUT_MS);
+    }
+
+    function init() {
+        // Stage 0: Check immediately
+        checkForBazaar();
+        if (isScriptInitialized) return;
+
+        // Stage 1: DOMContentLoaded listener
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkForBazaar);
+        }
     }
 
     // Test hook: under the Node test runner (jsdom + GM_* stubs) expose the pure
