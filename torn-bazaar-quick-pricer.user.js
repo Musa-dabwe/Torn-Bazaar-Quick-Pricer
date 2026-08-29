@@ -28,18 +28,6 @@
 
     const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.3';
 
-    // Changelog content for the info bubble tap.
-    const CHANGELOG = `
-        <h3>Changelog v${VERSION}</h3>
-        <ul>
-            <li>Refactored floating UI to a circular bubble with tap/long‑press actions.</li>
-            <li>Per‑page icons: info (main), box-open (add), rotate-square (manage).</li>
-            <li>Drag threshold added to distinguish drag from tap.</li>
-            <li>Removed auto‑focus from settings and API key modals.</li>
-            <li>Added changelog modal accessible from main page bubble tap.</li>
-        </ul>
-    `;
-
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
     // =====================================================================
@@ -288,8 +276,9 @@
     // GLOBAL CSS  (button system + badges)
     // =====================================================================
 
-    // Update cleanup sweep to also remove any stray bubble elements.
-    ['#qp-style', '#qp-font', '.qp-chip', '.qp-bubble', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
+    // Best-effort cleanup of a previous instance (PDA re-injection / SPA nav
+    // without a full reload): sweep any UI the old instance left in the DOM.
+    ['#qp-style', '#qp-font', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
         document.querySelectorAll(sel).forEach(el => el.remove()));
 
     // Nunito is the shared display face of the pastel design system
@@ -575,25 +564,6 @@
         }
         .qp-chip-gear:hover { background: #e9e5f6 !important; }
 
-        /* ── CIRCULAR BUBBLE ── */
-        .qp-bubble {
-            position: fixed;
-            left: 50%; bottom: 18px;
-            transform: translateX(-50%);
-            width: 52px; height: 52px;
-            border-radius: 50% !important;
-            background: var(--qp-accent);
-            color: #fff;
-            display: flex; align-items: center; justify-content: center;
-            z-index: 99998;
-            box-shadow: 0 8px 24px rgba(43,39,64,.18), 0 2px 6px rgba(0,0,0,.08);
-            touch-action: none;
-            cursor: grab;
-        }
-        .qp-bubble:active { cursor: grabbing; }
-        .qp-bubble.qp-bubble-dragging { opacity: .85; box-shadow: 0 12px 32px rgba(43,39,64,.3); }
-        .qp-bubble svg { width: 22px; height: 22px; fill: #fff; pointer-events: none; }
-
         /* ── TOASTS ── */
         .qp-toast-wrap {
             position: fixed;
@@ -637,12 +607,6 @@
     // Header badge icons (accent-stroked, per the pastel design system)
     const keyBadgeSVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2m-4 4 3 3"/></svg>`;
     const gearBadgeSVG = `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>`;
-
-    // Bubble icons (inline from docs/assets/)
-    const INFO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`;
-    const BOX_OPEN_FULL_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21V3a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v18"/><path d="M3 7h18"/><path d="M12 7v10"/></svg>`;
-    const BOX_OPEN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21V3a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v18"/><path d="M3 7h18"/></svg>`;
-    const ROTATE_SQUARE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6"/><path d="M1 20v-6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10"/><path d="M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
 
     // =====================================================================
     // UI HELPERS
@@ -798,6 +762,7 @@
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
+        apiInput.focus();
     }
 
     function showSettingsPanel() {
@@ -891,37 +856,48 @@
         wireToggleRowLabel(overlay, 'qpDollarCheck');
         wireToggleRowLabel(overlay, 'qpBelowMarket');
 
-    // Remove unconditional focus on the API key input – the overlay already traps focus.
-    // (The call was at the very end of the function.)
-    // -> Deleted line 765 and 900 (apiInput.focus()).
+        // Keep the number-cell label honest about which direction the % applies.
+        const belowMarketToggle = overlay.querySelector('#qpBelowMarket');
+        const discountLabel = overlay.querySelector('#qpDiscountLabel');
+        belowMarketToggle.addEventListener('change', () => {
+            discountLabel.textContent = belowMarketToggle.checked ? 'DISCOUNT' : 'MARKUP';
+        });
 
-    }
+        const apiInput = overlay.querySelector('#qpApiKey');
+        // Set via DOM, never string-interpolated into HTML: a malformed stored value
+        // containing quotes must not be able to break out of the attribute.
+        apiInput.value = CONFIG.apiKey;
+        wireEyeToggle(overlay, apiInput);
 
-    function showChangelog() {
-        const overlay = document.createElement('div');
-        overlay.className = 'qp-overlay';
-        overlay.innerHTML = `
-            <div class="qp-modal">
-                <div class="qp-head">
-                    <div class="qp-head__badge">${INFO_SVG}</div>
-                    <div>
-                        <div class="qp-head__title">Changelog</div>
-                        <div class="qp-head__sub">v${VERSION}</div>
-                    </div>
-                    <button class="qp-close" id="qpCancel" aria-label="Close">✕</button>
-                </div>
-                <div class="qp-body">
-                    <div style="max-height: 60vh; overflow-y: auto;">
-                        ${CHANGELOG}
-                    </div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(overlay);
+        overlay.querySelector('#qpClearCache').onclick = () => {
+            clearPriceCache();
+            const btn = overlay.querySelector('#qpClearCache');
+            btn.textContent = 'Cleared ✓';
+            setTimeout(() => { btn.textContent = 'Clear cache'; }, 1500);
+        };
+
+        overlay.querySelector('#qpSave').onclick = () => {
+            const key = apiInput.value.trim();
+            if (key !== '' && !isValidApiKey(key)) {
+                qpToast('API key must be 16 alphanumeric characters (leave empty to clear it)', 'error');
+                return;
+            }
+            CONFIG.defaultDiscount = clampDiscount(overlay.querySelector('#qpDiscount').value);
+            CONFIG.priceDiffThreshold = clampThreshold(overlay.querySelector('#qpThreshold').value);
+            CONFIG.apiKey = key;
+            CONFIG.disableNpcCheck = !overlay.querySelector('#qpNpcCheck').checked;
+            CONFIG.skipRwWeapons = overlay.querySelector('#qpRwCheck').checked;
+            CONFIG.skipDollarItems = overlay.querySelector('#qpDollarCheck').checked;
+            CONFIG.priceBelowMarket = overlay.querySelector('#qpBelowMarket').checked;
+            CONFIG.cacheTimeoutMin = Math.min(Math.max(parseInt(overlay.querySelector('#qpCacheMin').value, 10) || 5, 1), 120);
+            overlay.remove();
+            qpToast('Settings saved', 'success');
+        };
+
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
-        overlay.querySelector('#qpCancel').focus();
+        apiInput.focus();
     }
 
     // =====================================================================
@@ -1372,11 +1348,17 @@
     }
 
     async function updateAllManagePrices() {
+        const updateButton = chipFillBtn;
+        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; updateButton.textContent = 'Loading…'; }
+        const restoreButton = () => {
+            if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
+        };
+
         // Only the rows Torn has already rendered are processed. If more may be
         // waiting below the fold, we flag it in the summary so the user can
         // scroll to load them and run again (see mayHaveUnloadedItems).
         const items = getManageItems();
-        if (items.length === 0) { qpToast('No items found to update!', 'error'); return; }
+        if (items.length === 0) { restoreButton(); qpToast('No items found to update!', 'error'); return; }
         const moreBelow = mayHaveUnloadedItems(items);
 
         // Collect the actual work first so progress and totals are accurate.
@@ -1397,13 +1379,16 @@
             work.push({ priceDiv, itemId, itemName: getItemName(item) });
         }
 
-        let updated = 0, failed = 0;
+        let updated = 0, failed = 0, done = 0;
         for (const { priceDiv, itemId, itemName } of work) {
+            done++;
+            if (updateButton) updateButton.textContent = `Updating ${done}/${work.length}`;
             const result = await updateManageItemPrice(priceDiv, itemId, itemName);
             if (result === 'updated') updated++;
             else if (result === 'failed') failed++;
         }
 
+        restoreButton();
         let msg = `Updated ${updated} of ${work.length} item price${work.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
         if (skippedDollar > 0) msg += ` — ${skippedDollar} $1 item${skippedDollar > 1 ? 's' : ''} skipped`;
@@ -1421,192 +1406,139 @@
     // draggable and persisted per player via GM_setValue.)
     // =====================================================================
 
-    // === BUBBLE REFACTOR STATE ===
-    let bubbleEl = null;          // the circular UI element
-    let bubbleTapHandler = null;   // function to call on tap
-    let bubbleLongPressHandler = null; // function to call on long‑press
-    let bubbleContext = null; // 'add' | 'manage' | null – mirrors previous chipContext
-    // dragging threshold (px) – movement less than this is considered a tap/long‑press
-    const DRAG_THRESHOLD = 5;
+    let chipEl = null;
+    let chipFillBtn = null;
+    let chipContext = null; // 'add' | 'manage' | null
 
-    function clampBubblePosition(x, y) {
-        const rect = bubbleEl.getBoundingClientRect();
+    function clampChipPosition(x, y) {
+        const rect = chipEl.getBoundingClientRect();
         const maxX = window.innerWidth - rect.width - 6;
         const maxY = window.innerHeight - rect.height - 6;
         return { x: Math.min(Math.max(x, 6), Math.max(maxX, 6)), y: Math.min(Math.max(y, 6), Math.max(maxY, 6)) };
     }
 
-
-    function applyBubblePosition() {
-        const pos = GM_getValue('bubblePosition', null);
+    function applyChipPosition() {
+        const pos = GM_getValue('chipPosition', null);
         if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-            const { x, y } = clampBubblePosition(pos.x, pos.y);
-            bubbleEl.style.left = x + 'px';
-            bubbleEl.style.top = y + 'px';
-            bubbleEl.style.bottom = 'auto';
-            bubbleEl.style.transform = 'none';
+            // Clamp to the current viewport: a position saved on a large monitor
+            // must not restore off-screen on a phone.
+            const { x, y } = clampChipPosition(pos.x, pos.y);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
+            chipEl.style.bottom = 'auto';
+            chipEl.style.transform = 'none';
         }
+        // otherwise leave the CSS default (bottom-center) in place
     }
 
-    function createFloatingBubble() {
-        if (bubbleEl) return;
-        // Defensive cleanup of any prior bubble instances.
-        document.querySelectorAll('.qp-bubble').forEach(el => el.remove());
-        bubbleEl = document.createElement('div');
-        bubbleEl.className = 'qp-bubble';
-        // Default icon – will be updated by updateBubbleState().
-        bubbleEl.innerHTML = INFO_SVG;
-        document.body.appendChild(bubbleEl);
+    function createFloatingChip() {
+        if (chipEl) return;
+        // Defensive cleanup: if the script gets re-injected (PDA re-injection, SPA route
+        // change) without a full page reload, a previous instance's chip can be orphaned
+        // in the DOM with no reference to clean it up. Sweep those out before making a new one.
+        document.querySelectorAll('.qp-chip').forEach(el => el.remove());
+        chipEl = document.createElement('div');
+        chipEl.className = 'qp-chip';
+        chipEl.innerHTML = `
+            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">⋮⋮</div>
+            <button class="qp-chip-fill" id="qpChipFill">Quick Fill</button>
+            <button class="qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${gearSVG}</button>
+        `;
+        document.body.appendChild(chipEl);
+        chipFillBtn = chipEl.querySelector('#qpChipFill');
 
-        // Restore persisted position if any.
-        applyBubblePosition();
+        applyChipPosition();
 
-        // Shared state for drag and tap/long‑press.
-        let dragStartX = 0, dragStartY = 0, originX = 0, originY = 0;
-        let dragging = false;
-        let dragMoved = false;
-        let longPressTimer = null;
+        chipEl.querySelector('#qpChipGear').addEventListener('click', (e) => {
+            e.preventDefault();
+            showSettingsPanel();
+        });
 
-        // Pointer down – start both drag tracking and long‑press timer.
-        bubbleEl.addEventListener('pointerdown', (e) => {
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-            const rect = bubbleEl.getBoundingClientRect();
-            originX = rect.left;
-            originY = rect.top;
+        chipFillBtn.addEventListener('click', () => {
+            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+            if (chipContext === 'manage') updateAllManagePrices();
+            else fillAllItems();
+        });
+
+        // Drag handling via Pointer Events (covers mouse + touch/stylus in one API)
+        const grip = chipEl.querySelector('#qpChipGrip');
+        let dragOffsetX = 0, dragOffsetY = 0, dragging = false;
+
+        grip.addEventListener('pointerdown', (e) => {
             dragging = true;
-            dragMoved = false;
-            bubbleEl.classList.add('qp-bubble-dragging');
-            bubbleEl.setPointerCapture(e.pointerId);
-
-            // Long‑press timer.
-            longPressTimer = setTimeout(() => {
-                longPressTimer = null;
-                if (bubbleLongPressHandler) bubbleLongPressHandler();
-            }, 350);
+            chipEl.classList.add('qp-chip-dragging');
+            const rect = chipEl.getBoundingClientRect();
+            // Lock in current pixel position before dragging so left/top math is stable
+            chipEl.style.left = rect.left + 'px';
+            chipEl.style.top = rect.top + 'px';
+            chipEl.style.bottom = 'auto';
+            chipEl.style.transform = 'none';
+            dragOffsetX = e.clientX - rect.left;
+            dragOffsetY = e.clientY - rect.top;
+            grip.setPointerCapture(e.pointerId);
         });
-
-        bubbleEl.addEventListener('pointermove', (e) => {
+        grip.addEventListener('pointermove', (e) => {
             if (!dragging) return;
-            const deltaX = e.clientX - dragStartX;
-            const deltaY = e.clientY - dragStartY;
-            // If movement is still within threshold, treat as potential tap/long‑press.
-            if (Math.abs(deltaX) <= DRAG_THRESHOLD && Math.abs(deltaY) <= DRAG_THRESHOLD) return;
-            // Movement exceeded threshold – this is a drag.
-            dragMoved = true;
-            // Cancel long‑press if it hasn't fired yet.
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-            }
-            const { x, y } = clampBubblePosition(originX + deltaX, originY + deltaY);
-            bubbleEl.style.left = x + 'px';
-            bubbleEl.style.top = y + 'px';
+            const { x, y } = clampChipPosition(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
         });
-
-        const finishDrag = (e) => {
+        const endDrag = (e) => {
             if (!dragging) return;
             dragging = false;
-            bubbleEl.classList.remove('qp-bubble-dragging');
-            bubbleEl.releasePointerCapture(e.pointerId);
-
-            const deltaX = e.clientX - dragStartX;
-            const deltaY = e.clientY - dragStartY;
-            // If drag distance was under threshold, we let the tap/long‑press logic handle it.
-            if (Math.abs(deltaX) <= DRAG_THRESHOLD && Math.abs(deltaY) <= DRAG_THRESHOLD) {
-                dragMoved = false; // ensure tap logic runs.
-                return;
-            }
-            // Drag occurred – persist position.
-            const rect = bubbleEl.getBoundingClientRect();
-            GM_setValue('bubblePosition', { x: rect.left, y: rect.top });
+            chipEl.classList.remove('qp-chip-dragging');
+            const rect = chipEl.getBoundingClientRect();
+            GM_setValue('chipPosition', { x: rect.left, y: rect.top });
         };
-        bubbleEl.addEventListener('pointerup', finishDrag);
-        bubbleEl.addEventListener('pointercancel', finishDrag);
+        grip.addEventListener('pointerup', endDrag);
+        grip.addEventListener('pointercancel', endDrag);
 
-        // Tap handling – runs on pointerup if no long‑press fired and no drag moved.
-        const clearTap = (e) => {
-            if (longPressTimer) {
-                clearTimeout(longPressTimer);
-                longPressTimer = null;
-                // Only trigger tap if we didn't drag.
-                if (!dragMoved && bubbleTapHandler) bubbleTapHandler();
-            }
-        };
-        bubbleEl.addEventListener('pointerup', clearTap);
-        bubbleEl.addEventListener('pointercancel', (e) => {
-            if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        // Keyboard repositioning for the grip (paired with its role="button")
+        grip.addEventListener('keydown', (e) => {
+            const step = 10;
+            let dx = 0, dy = 0;
+            if (e.key === 'ArrowLeft') dx = -step;
+            else if (e.key === 'ArrowRight') dx = step;
+            else if (e.key === 'ArrowUp') dy = -step;
+            else if (e.key === 'ArrowDown') dy = step;
+            else return;
+            e.preventDefault();
+            const rect = chipEl.getBoundingClientRect();
+            chipEl.style.bottom = 'auto';
+            chipEl.style.transform = 'none';
+            const { x, y } = clampChipPosition(rect.left + dx, rect.top + dy);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
+            GM_setValue('chipPosition', { x, y });
         });
 
-        // Re-apply saved position on window resize.
         window.addEventListener('resize', () => {
-            if (!bubbleEl) return;
-            const pos = GM_getValue('bubblePosition', null);
+            if (!chipEl) return;
+            const pos = GM_getValue('chipPosition', null);
             if (!pos) return;
-            const { x, y } = clampBubblePosition(pos.x, pos.y);
-            bubbleEl.style.left = x + 'px';
-            bubbleEl.style.top = y + 'px';
+            const { x, y } = clampChipPosition(pos.x, pos.y);
+            chipEl.style.left = x + 'px';
+            chipEl.style.top = y + 'px';
         });
-
-        // Listen for hash changes to update icon / actions.
-        window.addEventListener('hashchange', updateBubbleState);
-        updateBubbleState();
     }
 
-
-    function updateBubbleState() {
-        if (!bubbleEl) return;
-        // Ensure bubble is visible unless on personalize page.
-        bubbleEl.style.display = 'flex';
-        const hash = window.location.hash;
-        // Default – main bazaar view
-        if (!hash || hash === '#/') {
-            bubbleEl.innerHTML = INFO_SVG;
-            bubbleEl.style.background = 'var(--qp-accent)';
-            bubbleTapHandler = showChangelog;
-            bubbleLongPressHandler = showSettingsPanel;
-            bubbleContext = null;
+    function updateChipContext() {
+        if (!chipEl) return;
+        // A running batch owns the button label (progress text) — don't clobber it.
+        if (chipFillBtn && chipFillBtn.disabled) return;
+        const manageCount = getManageItems().length;
+        if (manageCount > 0) {
+            chipContext = 'manage';
+            chipFillBtn.textContent = 'Update All';
             return;
         }
-        if (hash === '#/add') {
-            // Determine fill state: all visible items have a non‑empty, non‑zero price input.
-            const items = getVisibleItems();
-            const allFilled = items.every(item => {
-                const priceInput = item.querySelector(SELECTORS.priceInputs);
-                return priceInput && priceInput.value && parseFloat(priceInput.value) > 0;
-            });
-            if (allFilled) {
-                bubbleEl.innerHTML = BOX_OPEN_SVG;
-                bubbleEl.style.background = '#e8467c';
-            } else {
-                bubbleEl.innerHTML = BOX_OPEN_FULL_SVG;
-                bubbleEl.style.background = 'var(--qp-accent)';
-            }
-            bubbleTapHandler = () => fillAllItemsOrPromptApiKey();
-            bubbleLongPressHandler = null; // No long‑press action on add page
-            bubbleContext = 'add';
-            return;
+        const addCount = getVisibleItems().length;
+        if (addCount > 0) {
+            chipContext = 'add';
+            chipFillBtn.textContent = 'Quick Fill';
         }
-        if (hash === '#/manage') {
-            bubbleEl.innerHTML = ROTATE_SQUARE_SVG;
-            bubbleEl.style.background = 'var(--qp-accent)';
-            bubbleTapHandler = updateAllManagePrices;
-            bubbleLongPressHandler = showSettingsPanel;
-            bubbleContext = 'manage';
-            return;
-        }
-        if (hash === '#/personalize') {
-            bubbleEl.style.display = 'none';
-            return;
-        }
-        // Fallback – treat as main view.
-        bubbleEl.innerHTML = INFO_SVG;
-        bubbleEl.style.background = 'var(--qp-accent)';
-        bubbleTapHandler = showChangelog;
-        bubbleLongPressHandler = showSettingsPanel;
-        bubbleContext = null;
+        // if neither section has items yet (still loading), keep the last known context
     }
-
 
     function processManageItems() {
         const items = getManageItems();
@@ -1662,10 +1594,13 @@
     }
 
     async function fillAllItems() {
+        const fillButton = chipFillBtn;
+        if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Loading…'; }
         // Same as Update All: only the rows Torn has already rendered are
         // processed; rows below the fold aren't in the DOM until scrolled to.
         const items = getVisibleItems();
         if (items.length === 0) {
+            if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
             qpToast('No items found to fill!', 'error');
             return;
         }
@@ -1675,27 +1610,22 @@
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
             return true;
         });
+        if (fillButton) fillButton.textContent = `Filling 0/${toFill.length}`;
         let completed = 0, filled = 0;
         const promises = toFill.map(item => fillItemPrice(item).then((ok) => {
             completed++;
             if (ok) filled++;
+            if (fillButton) fillButton.textContent = `Filling ${completed}/${toFill.length}`;
         }));
         await Promise.all(promises);
+        if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
         const failedCount = toFill.length - filled;
         let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
         if (failedCount > 0) msg += ` — ${failedCount} failed`;
         if (moreBelow) msg += ' — scroll down to load more items, then run again';
         qpToast(msg, failedCount > 0 ? 'error' : 'success', 6000);
-        // Update bubble icon in case fill state changed.
-        updateBubbleState();
     }
-
-    async function fillAllItemsOrPromptApiKey() {
-        if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
-        fillAllItems();
-    }
-
 
     // =====================================================================
     // ITEM PROCESSING
@@ -1723,21 +1653,21 @@
             mutationDebounceTimer = setTimeout(() => {
                 processAllItems();
                 processManageItems();
-                updateBubbleState();
+                updateChipContext();
             }, 300);
         });
         bazaarObserver.observe(bazaarRoot, { childList: true, subtree: true });
     }
 
     function initScript(bazaarRoot) {
-        // Full init regardless of key state: the bubble and item buttons stay usable
+        // Full init regardless of key state: the chip and item buttons stay usable
         // and simply prompt for a key when clicked, instead of the script going
         // dead until a reload if the first-run prompt is dismissed.
         processAllItems();
         setupObserver(bazaarRoot);
         processManageItems();
-        createFloatingBubble();
-        updateBubbleState();
+        createFloatingChip();
+        updateChipContext();
         if (!CONFIG.apiKey) showApiKeyPrompt();
     }
 
