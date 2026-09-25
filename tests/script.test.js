@@ -1,6 +1,35 @@
 import { describe, it, expect, vi } from 'vitest';
 import { loadScript } from './load-script.js';
 
+describe('Material icon map', () => {
+    const { QP } = loadScript();
+    const requiredIcons = [
+        'info', 'inventory_2', 'refresh', 'settings', 'key', 'visibility',
+        'visibility_off', 'add', 'undo', 'check_circle', 'error', 'warning',
+        'sports_martial_arts', 'open_in_new', 'close', 'more_vert'
+    ];
+
+    it.each(requiredIcons)('maps %s to a normalized currentColor SVG', name => {
+        expect(QP.getMaterialIcon(name)).toEqual(expect.any(String));
+        expect(QP.getMaterialIcon(name)).toContain('viewBox="0 0 24 24"');
+        expect(QP.getMaterialIcon(name)).toContain('fill="currentColor"');
+        expect(QP.getMaterialIcon(name)).toContain('aria-hidden="true"');
+    });
+
+    it('exposes every required semantic name in the centralized map', () => {
+        expect(Object.keys(QP.MATERIAL_ICONS).sort()).toEqual([...requiredIcons].sort());
+    });
+
+    it('keeps distinct source assets distinct', () => {
+        const renderedIcons = requiredIcons.map(name => QP.getMaterialIcon(name));
+        expect(new Set(renderedIcons).size).toBe(requiredIcons.length);
+    });
+
+    it('returns null for an unknown icon name', () => {
+        expect(QP.getMaterialIcon('not_a_material_icon')).toBe(null);
+    });
+});
+
 describe('smoke', () => {
     it('loads without throwing and injects its stylesheet', () => {
         const { QP } = loadScript();
