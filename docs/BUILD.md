@@ -3,9 +3,15 @@
 ## Overview
 - **Purpose**: Userscript for filling and updating Torn bazaar listings with market-based prices.
 - **Current Version**: 2.9.3
-- **Status**: Documentation synchronized with current userscript source
+- **Status**: In active development; API v2 batching implemented, live smoke test pending
 
 ## Development Timeline
+### 2026-09-25 — API v2 batch pricing implemented
+Session: [session-2026-09-25-1148-api-v2-batch-pricing.md](sessions/session-2026-09-25-1148-api-v2-batch-pricing.md)
+Brief: Added cache-first 10-ID API v2 batches, 600 ms serialized spacing, v1 fallback,
+schema-shape detection, callback isolation, and regression coverage. Live Public-key
+verification remains pending.
+
 ### 2026-09-25 — Documentation synchronized with v2.9.3 source
 Session: [session-2026-09-25-0852-sync-documentation-with-userscript.md](sessions/session-2026-09-25-0852-sync-documentation-with-userscript.md)
 Brief: Removed documentation for the unsupported v2.9.5 circular-bubble refactor,
@@ -23,27 +29,31 @@ setting, and aligned package metadata to v2.9.3.
 
 ## Bugs Discovered & Fixed
 ### Critical
-- None in this documentation-only session.
+- Live Public-key verification is pending; no production response or row-fill behavior has been observed yet.
 
 ### Medium
 - Documentation and project metadata claimed v2.9.5 and circular-bubble behavior while
   the source was v2.9.3 with a pill chip. Fixed by synchronizing documentation and
   package metadata with the source.
+- API v2 batch implementation initially allowed a zero-delay scheduler to bypass the
+  600 ms spacing window. Fixed with a next-request-time gate and regression tests.
+- A v2 response with no parseable values could silently become zero prices. Fixed by
+  whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit testing: Vitest + jsdom, 42 tests.
+- Unit/integration testing: Vitest + jsdom, 67 tests.
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
-- Manual testing: not required for this documentation-only update.
+- Manual testing: live Public-key v2 smoke test is pending; no API key was available in the development environment.
 
 ## AI Models & Their Contributions
 ### Architecture & Complex Logic
-- **Space Bunny Free**: Compared the userscript's actual metadata, DOM behavior, settings,
-  request flow, and CSS with the existing docs; identified version and feature drift.
+- **Space Bunny Free**: Designed and reviewed the API v2 batching architecture, queue
+  integration, schema fallback, and callback isolation under subagent-driven development.
 
 ### Code Generation & Refactoring
-- **Space Bunny Free**: Updated README, changelog, theme reference, package metadata, and
-  session records; no application source code was changed.
+- **Space Bunny Free**: Implemented the request queue changes, tests, documentation, and
+  final review fixes. The userscript remains v2.9.3.
 
 ### Specific Implementations
 - None.
