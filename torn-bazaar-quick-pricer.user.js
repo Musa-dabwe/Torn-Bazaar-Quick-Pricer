@@ -32,7 +32,7 @@
         version: '2.9.4',
         date: '2026-09-25',
         notes: Object.freeze([
-            'API v2 batches now price up to ten cached or uncached items per request.',
+            'Fresh cached prices stay local; API v2 batches now price up to ten uncached items per request.',
             'The pill is now a circular Material 3 bubble that fits mobile and desktop layouts.',
             'Route-aware actions change the icon and action across Main, Add, Manage, and Personalize.',
             'PDA initialization remains compatible with delayed page and hash-route loading.',
@@ -772,7 +772,7 @@
             if (isValidApiKey(key)) {
                 CONFIG.apiKey = key;
                 overlay.remove();
-                // No reload needed: the chip, observer, and item buttons are already
+                // No reload needed: the bubble, observer, and item buttons are already
                 // wired up; the queue simply starts working once a key exists.
                 qpToast('API key saved', 'success');
             } else {
@@ -1506,11 +1506,11 @@
     function getManageItems() {
         // Scoped to the "Manage your Bazaar" section specifically — a plain class-based
         // selector here also matches rows in the "Add items" section (they share the
-        // same item___ classnames), which was causing the chip to misdetect context and
+        // same item___ classnames), which was causing the bubble to misdetect context and
         // fire updateAllManagePrices() on the add-items page. If the manage heading
         // isn't found, treat it as "no manage items" rather than falling back to a
         // document-wide scan, since a false negative here is harmless but a false
-        // positive breaks the chip.
+        // positive breaks the bubble.
         const container = findSectionContainer(h =>
             h.textContent.includes('Manage your Bazaar') ||
             h.textContent.includes('Manage items') ||
@@ -1937,7 +1937,7 @@
     }
 
     function initScript(bazaarRoot) {
-        // Full init regardless of key state: the chip and item buttons stay usable
+        // Full init regardless of key state: the bubble and item buttons stay usable
         // and simply prompt for a key when clicked, instead of the script going
         // dead until a reload if the first-run prompt is dismissed.
         processAllItems();
@@ -1949,65 +1949,75 @@
     }
 
     let isScriptInitialized = false;
+    let rootWaitCleanup = null;
 
     const ROOT_WAIT_TIMEOUT_MS = 20000;
 
+    function findBazaarRoot() {
+        return document.querySelector(SELECTORS.bazaarRoot) || document.querySelector(SELECTORS.bazaarRootLegacy);
+    }
+
+    function cleanupRootWait() {
+        if (!rootWaitCleanup) return;
+        const cleanup = rootWaitCleanup;
+        rootWaitCleanup = null;
+        cleanup();
+    }
+
+    function completeInitialization(root) {
+        if (isScriptInitialized) return;
+        isScriptInitialized = true;
+        cleanupRootWait();
+        initScript(root);
+    }
+
     function checkForBazaar() {
         if (isScriptInitialized) return;
-        const findRoot = () =>
-            document.querySelector(SELECTORS.bazaarRoot) || document.querySelector(SELECTORS.bazaarRootLegacy);
-        const root = findRoot();
+        const root = findBazaarRoot();
         if (root) {
-            isScriptInitialized = true;
-            initScript(root);
+            completeInitialization(root);
             return;
         }
+        if (rootWaitCleanup) return;
 
         // Multi-stage initialization fallback strategy for Torn PDA and various mobile browsers:
         // 1. MutationObserver on document.body or documentElement
         let observer = null;
+        let pollingInterval = null;
+        let giveUpTimer = null;
+        const cleanup = () => {
+            if (observer) observer.disconnect();
+            if (pollingInterval) clearInterval(pollingInterval);
+            if (giveUpTimer) clearTimeout(giveUpTimer);
+        };
+        rootWaitCleanup = cleanup;
+
         const target = document.body || document.documentElement;
         if (target) {
             observer = new MutationObserver(() => {
-                if (isScriptInitialized) { observer.disconnect(); return; }
-                const found = findRoot();
-                if (found) {
-                    isScriptInitialized = true;
-                    observer.disconnect();
-                    if (pollingInterval) clearInterval(pollingInterval);
-                    clearTimeout(giveUpTimer);
-                    initScript(found);
-                }
+                const found = findBazaarRoot();
+                if (found) completeInitialization(found);
             });
             observer.observe(target, { childList: true, subtree: true });
         }
 
         // 2. Polling fallback (100ms interval for up to 50 attempts = 5s)
         let attempts = 0;
-        const pollingInterval = setInterval(() => {
-            if (isScriptInitialized) {
-                clearInterval(pollingInterval);
-                if (observer) observer.disconnect();
-                return;
-            }
+        pollingInterval = setInterval(() => {
             attempts++;
-            const found = findRoot();
+            const found = findBazaarRoot();
             if (found) {
-                isScriptInitialized = true;
-                clearInterval(pollingInterval);
-                if (observer) observer.disconnect();
-                clearTimeout(giveUpTimer);
-                initScript(found);
+                completeInitialization(found);
             } else if (attempts >= 50) {
                 clearInterval(pollingInterval);
+                pollingInterval = null;
             }
         }, 100);
 
         // 3. Hard timeout safeguard
-        const giveUpTimer = setTimeout(() => {
+        giveUpTimer = setTimeout(() => {
             if (!isScriptInitialized) {
-                if (observer) observer.disconnect();
-                if (pollingInterval) clearInterval(pollingInterval);
+                cleanupRootWait();
                 console.warn(`[BazaarQuickPricer] Bazaar container not found after ${ROOT_WAIT_TIMEOUT_MS / 1000}s — giving up`);
             }
         }, ROOT_WAIT_TIMEOUT_MS);

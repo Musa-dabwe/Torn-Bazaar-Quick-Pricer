@@ -3,7 +3,7 @@
 ## Overview
 - **Purpose**: Userscript for filling and updating Torn bazaar listings with market-based prices.
 - **Current Version**: 2.9.4
-- **Status**: In active development; v2.9.4 Material 3 bubble release verified
+- **Status**: In active development; automated v2.9.4 checks pass, live desktop/PDA smoke pending
 
 ## Development Timeline
 ### 2026-09-25 — v2.9.4 Material 3 bubble release prepared
@@ -49,7 +49,7 @@ setting, and aligned package metadata to v2.9.3.
   whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit/integration testing: Vitest + jsdom, 136 tests.
+- Unit/integration testing: Vitest + jsdom, 138 tests.
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
 - Manual testing: passed. The user installed the local `test.txt` export and confirmed that

@@ -31,8 +31,10 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   remembered and clamped), or long-press for 350 ms to open settings. Main shows
   release notes, Add runs Quick Fill, Manage runs Update All, and Personalize hides
   it. The Add bubble turns pink with a completion check when every visible row is
-  filled. Icons are inline Material 3 SVGs sourced from Google's official Material
-  Design Icons repository under Apache License 2.0.
+  filled. Icons are Material Design assets reviewed from Google's official Material
+  source and acquired from the documented Google Fonts CDN URLs; see
+  [`docs/assets/material-icons/README.md`](docs/assets/material-icons/README.md)
+  for provenance, legacy-serialization details, and Apache License 2.0 attribution.
 - **Rate-limit aware** — fresh cache entries are reused without a network request.
   Uncached item IDs are collected into bounded API v2 batches of up to 10, queued
   with 600 ms spacing to stay inside Torn's 100 requests/minute limit, deduplicated,

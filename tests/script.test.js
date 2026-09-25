@@ -94,6 +94,21 @@ describe('PDA initialization and dialog focus', () => {
         window.location.hash = '';
     });
 
+    function trackObservers() {
+        const observers = [];
+        const OriginalMutationObserver = globalThis.MutationObserver;
+        class TrackedMutationObserver {
+            constructor(callback) {
+                this.callback = callback;
+                this.disconnect = vi.fn();
+                this.observe = vi.fn();
+                observers.push(this);
+            }
+        }
+        globalThis.MutationObserver = TrackedMutationObserver;
+        return { observers, restore: () => { globalThis.MutationObserver = OriginalMutationObserver; } };
+    }
+
     it('checks for an existing bazaar root immediately', () => {
         const root = document.createElement('div');
         root.id = 'bazaarRoot';
@@ -106,53 +121,96 @@ describe('PDA initialization and dialog focus', () => {
         expect(document.querySelector('.qp-bubble')).toBeTruthy();
     });
 
-    it('registers a one-shot DOMContentLoaded fallback while the document is loading', () => {
+    it('does not duplicate fallback paths when DOMContentLoaded follows the initial failed check', () => {
         vi.useFakeTimers();
         const originalReadyState = document.readyState;
         Object.defineProperty(document, 'readyState', { configurable: true, value: 'loading' });
-        const addEventListener = vi.spyOn(document, 'addEventListener').mockImplementation((type, listener, options) => {
-            if (type !== 'DOMContentLoaded') {
-                window.EventTarget.prototype.addEventListener.call(document, type, listener, options);
-            }
-        });
+        const tracked = trackObservers();
         try {
             const { QP } = loadScript();
 
             QP.init();
+            expect(tracked.observers).toHaveLength(1);
+            expect(vi.getTimerCount()).toBe(2);
 
-            expect(addEventListener).toHaveBeenCalledWith('DOMContentLoaded', expect.any(Function), { once: true });
+            document.dispatchEvent(new window.Event('DOMContentLoaded'));
+
+            expect(tracked.observers).toHaveLength(1);
+            expect(vi.getTimerCount()).toBe(2);
         } finally {
             Object.defineProperty(document, 'readyState', { configurable: true, value: originalReadyState });
-            addEventListener.mockRestore();
+            tracked.restore();
             vi.advanceTimersByTime(20000);
+            vi.useRealTimers();
+        }
+    });
+
+    it('cleans up and initializes once when MutationObserver discovers the root', () => {
+        vi.useFakeTimers();
+        const tracked = trackObservers();
+        try {
+            const { QP } = loadScript({ tornApiKey: 'abcDEF1234567890' });
+            QP.init();
+            const waitObserver = tracked.observers[0];
+            const root = document.createElement('div');
+            root.id = 'bazaarRoot';
+            document.body.appendChild(root);
+
+            waitObserver.callback();
+            vi.advanceTimersByTime(5000);
+
+            expect(waitObserver.disconnect).toHaveBeenCalledTimes(1);
+            expect(vi.getTimerCount()).toBe(0);
+            expect(tracked.observers).toHaveLength(2);
+            expect(tracked.observers[1].observe).toHaveBeenCalledTimes(1);
+            expect(tracked.observers[1].observe).toHaveBeenCalledWith(root, { childList: true, subtree: true });
+            expect(document.querySelectorAll('.qp-bubble')).toHaveLength(1);
+        } finally {
+            tracked.restore();
+            vi.useRealTimers();
+        }
+    });
+
+    it('cleans up and initializes once when polling discovers the root', () => {
+        vi.useFakeTimers();
+        const tracked = trackObservers();
+        try {
+            const { QP } = loadScript({ tornApiKey: 'abcDEF1234567890' });
+            QP.init();
+            const waitObserver = tracked.observers[0];
+            const root = document.createElement('div');
+            root.id = 'bazaarRoot';
+            document.body.appendChild(root);
+
+            vi.advanceTimersByTime(100);
+            vi.advanceTimersByTime(5000);
+
+            expect(waitObserver.disconnect).toHaveBeenCalledTimes(1);
+            expect(vi.getTimerCount()).toBe(0);
+            expect(tracked.observers).toHaveLength(2);
+            expect(tracked.observers[1].observe).toHaveBeenCalledTimes(1);
+            expect(tracked.observers[1].observe).toHaveBeenCalledWith(root, { childList: true, subtree: true });
+            expect(document.querySelectorAll('.qp-bubble')).toHaveLength(1);
+        } finally {
+            tracked.restore();
             vi.useRealTimers();
         }
     });
 
     it('bounds observer and polling cleanup to the root-search timeout', () => {
         vi.useFakeTimers();
-        const observers = [];
-        const OriginalMutationObserver = globalThis.MutationObserver;
-        class TrackedMutationObserver {
-            constructor(callback) {
-                this.callback = callback;
-                this.disconnect = vi.fn();
-                observers.push(this);
-            }
-            observe() {}
-        }
-        globalThis.MutationObserver = TrackedMutationObserver;
+        const tracked = trackObservers();
         try {
             const { QP } = loadScript();
             QP.init();
-            expect(observers).toHaveLength(1);
+            const waitObserver = tracked.observers[0];
 
             vi.advanceTimersByTime(20000);
 
-            expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+            expect(waitObserver.disconnect).toHaveBeenCalledTimes(1);
             expect(vi.getTimerCount()).toBe(0);
         } finally {
-            globalThis.MutationObserver = OriginalMutationObserver;
+            tracked.restore();
             vi.useRealTimers();
         }
     });

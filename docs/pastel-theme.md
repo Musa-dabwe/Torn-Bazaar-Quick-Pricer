@@ -120,11 +120,13 @@ The current source defines:
 
 ## Iconography
 
-The script embeds reviewed Material 3 SVG paths from Google's official Material Design
-Icons repository. They are normalized to a 24×24 viewBox, use `currentColor`, and are
-inlined so the single-file PDA userscript needs no runtime font or SVG request. The
-source assets are retained under `docs/assets/material-icons/` for attribution; Google's
-Material Design Icons repository is licensed under Apache License 2.0.
+The script embeds Material Design SVG assets reviewed from Google's official Material
+source and acquired from the documented Google Fonts CDN URLs. The CDN resources can
+represent differing legacy serializations, so they are not claimed to be byte-for-byte
+copies from one repository revision. Paths are normalized to a 24×24 viewBox, use
+`currentColor`, and are inlined so the single-file PDA userscript needs no runtime icon
+request. `docs/assets/material-icons/README.md` records every CDN URL, review status,
+and Apache License 2.0 attribution.
 
 ## Components
 

@@ -16,9 +16,10 @@ so users can diff versions and roll back easily.
   circular bubble. Tap runs the action for Main, Add, or Manage; long-pressing for
   350 ms opens settings; Personalize hides the bubble. A complete Add route turns the
   bubble pink with a check icon.
-- **Material 3 icons:** inline SVG paths come from Google's official Material Design
-  Icons repository and are distributed under Apache License 2.0. The single-file
-  userscript makes no runtime icon-font request.
+- **Material 3 icons:** inline SVG paths are Material Design assets reviewed from
+  Google's official Material source and acquired from the documented Google Fonts CDN
+  URLs. The assets README records the differing legacy serializations and Apache
+  License 2.0 attribution. The single-file userscript makes no runtime icon request.
 - **PDA initialization:** immediate root detection, a one-shot DOMContentLoaded
   fallback, bounded observer/poll cleanup, and a 20-second timeout cover delayed
   Torn PDA rendering. API prompt, settings, and changelog dialogs do not force focus
