@@ -569,10 +569,12 @@
         .qp-bubble:active { transform: translateX(-50%) scale(.94); }
         .qp-bubble.qp-bubble-dragging { opacity: .9; box-shadow: 0 16px 38px rgba(43,39,64,.32); cursor: grabbing; }
         .qp-bubble.qp-bubble-busy { cursor: progress; }
-        .qp-bubble.qp-bubble-filled { background: #e8467c; box-shadow: 0 10px 26px rgba(232,70,124,.4), 0 2px 6px rgba(0,0,0,.08); }
         .qp-bubble.qp-bubble-hidden { display: none; }
         .qp-bubble svg { width: 26px; height: 26px; display: block; pointer-events: none; }
         .qp-bubble-progress { color: #fff; font: 900 11px/1 var(--qp-font); user-select: none; }
+        /* Add route "fill" state: the word is the affordance, so it is styled as
+           boldly as an icon would be and never wraps inside the circle. */
+        .qp-bubble-label { color: #fff; font: 900 13px/1 var(--qp-font); letter-spacing: -.2px; user-select: none; }
 
         /* ── TOASTS ── */
         .qp-toast-wrap {
@@ -767,6 +769,9 @@
         const apiInput = overlay.querySelector('#qpApiKey');
         wireEyeToggle(overlay, apiInput);
 
+        // Every exit path removes the prompt first and only then runs the
+        // changelog gate, so the two modals can never be stacked.
+        const closePrompt = () => { overlay.remove(); maybeShowChangelog(); };
         overlay.querySelector('#qpSave').onclick = () => {
             const key = apiInput.value.trim();
             if (isValidApiKey(key)) {
@@ -775,16 +780,42 @@
                 // No reload needed: the bubble, observer, and item buttons are already
                 // wired up; the queue simply starts working once a key exists.
                 qpToast('API key saved', 'success');
+                maybeShowChangelog();
             } else {
                 qpToast('Please enter a valid 16-character alphanumeric API key', 'error');
             }
         };
-        overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
-        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-        wireOverlayA11y(overlay, () => overlay.remove());
+        overlay.querySelector('#qpCancel').onclick = closePrompt;
+        overlay.onclick = (e) => { if (e.target === overlay) closePrompt(); };
+        wireOverlayA11y(overlay, closePrompt);
+    }
+
+    /** The version the user has already been shown the changelog for. */
+    const CHANGELOG_SEEN_KEY = 'changelogSeenVersion';
+
+    function shouldShowChangelogForVersion() {
+        return getSetting(CHANGELOG_SEEN_KEY, '') !== VERSION;
+    }
+
+    function markChangelogSeen() {
+        setSetting(CHANGELOG_SEEN_KEY, VERSION);
+    }
+
+    /**
+     * Run the once-per-version changelog gate. Skipped entirely when another
+     * script overlay (e.g. the API-key prompt) is already up, so the modals
+     * never stack; the dismissing prompt calls this again once it is gone.
+     */
+    function maybeShowChangelog() {
+        if (!shouldShowChangelogForVersion() || changelogOpen) return false;
+        if (document.querySelector('.qp-overlay')) return false;
+        showChangelog();
+        return true;
     }
 
     function showChangelog() {
+        if (changelogOpen) return;
+        changelogOpen = true;
         const entry = CHANGELOG[0];
         const overlay = document.createElement('div');
         overlay.className = 'qp-overlay';
@@ -825,7 +856,13 @@
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
-        const close = () => overlay.remove();
+        // Every close path (button, scrim, Escape) counts as "seen" so the
+        // changelog is shown exactly once per version.
+        const close = () => {
+            changelogOpen = false;
+            markChangelogSeen();
+            overlay.remove();
+        };
         closeButton.addEventListener('click', close);
         overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
         wireOverlayA11y(overlay, close);
@@ -1295,6 +1332,42 @@
     }
 
     /**
+     * Clear the quantity of every currently loaded add-items row, leaving prices
+     * untouched. Only rows in getVisibleItems() are affected — the page
+     * lazy-loads the rest, so anything not rendered cannot be cleared.
+     * @returns {number} how many rows actually had a quantity to clear
+     */
+    function clearAllQuantities() {
+        let cleared = 0;
+        getVisibleItems().forEach(item => {
+            const amountDiv = item.querySelector(SELECTORS.amountWrap);
+            if (!amountDiv) return;
+            const checkboxWrap = amountDiv.querySelector(SELECTORS.quantityCheckbox);
+            if (checkboxWrap) {
+                const checkbox = checkboxWrap.querySelector('input');
+                if (checkbox && checkbox.checked) {
+                    checkbox.click();
+                    cleared++;
+                }
+                return;
+            }
+            const quantityInput = amountDiv.querySelector('input');
+            if (quantityInput && String(quantityInput.value || '').trim() !== '') {
+                quantityInput.value = '';
+                quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+                quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+                cleared++;
+            }
+        });
+        setBubbleMode('fill');
+        qpToast(
+            cleared > 0 ? `Cleared quantities on ${cleared} item${cleared === 1 ? '' : 's'}` : 'No quantities to clear',
+            cleared > 0 ? 'success' : 'info'
+        );
+        return cleared;
+    }
+
+    /**
      * Fill one add-items row with its calculated price and quantity.
      * @returns {Promise<boolean>} true if the price was actually filled
      */
@@ -1590,17 +1663,38 @@
 
     let bubbleEl = null;
     let bubbleBusy = false;
+    let bubbleDragging = false;
+    let changelogOpen = false;
+    // Add route has two user-facing states: 'fill' runs Quick Fill, 'clear' is the
+    // post-fill state whose tap clears the loaded quantities. In memory only — a
+    // reload always starts in 'fill'.
+    let bubbleMode = 'fill';
     const BUBBLE_LONG_PRESS_MS = 350;
     const BUBBLE_DRAG_THRESHOLD = 6;
     const BUBBLE_KEYBOARD_STEP = 10;
 
+    /**
+     * The bazaar route the bubble is being rendered for. Only the two routes
+     * with a batch action are supported; the base route, Personalize, and any
+     * unknown route are 'unsupported' and must hide the bubble.
+     */
     function getBubbleRoute(hash) {
         const route = String(hash || '').trim().split(/[/?#]/).filter(Boolean)[0];
-        if (route === 'add' || route === 'manage' || route === 'personalize') return route;
-        return 'main';
+        if (route === 'add' || route === 'manage') return route;
+        return 'unsupported';
     }
 
     function getBubbleTab() { return getBubbleRoute(window.location.hash); }
+
+    function getBubbleMode() { return bubbleMode; }
+
+    /** True when the Add tap clears quantities instead of running Quick Fill. */
+    function isBubbleActionClear() { return bubbleMode === 'clear'; }
+
+    function setBubbleMode(mode) {
+        bubbleMode = mode === 'clear' ? 'clear' : 'fill';
+        renderBubbleContent();
+    }
 
     function clampBubblePosition(x, y) {
         const rect = bubbleEl.getBoundingClientRect();
@@ -1637,25 +1731,32 @@
 
     function renderBubbleContent() {
         if (!bubbleEl || bubbleBusy) return;
+        // While dragging, the settings icon hints that the gesture moves the
+        // bubble; the route state is restored on release or cancel.
+        if (bubbleDragging) {
+            bubbleEl.classList.remove('qp-bubble-hidden');
+            bubbleEl.innerHTML = getMaterialIcon('settings');
+            return;
+        }
         const route = getBubbleTab();
-        bubbleEl.classList.remove('qp-bubble-filled');
-        if (route === 'personalize') {
+        if (route === 'unsupported') {
             bubbleEl.classList.add('qp-bubble-hidden');
             return;
         }
         bubbleEl.classList.remove('qp-bubble-hidden');
-        if (route === 'add') {
-            const filled = isActiveCategoryFilled();
-            bubbleEl.classList.toggle('qp-bubble-filled', filled);
-            bubbleEl.innerHTML = getMaterialIcon(filled ? 'check_circle' : 'inventory_2');
-        } else if (route === 'manage') {
+        if (route === 'manage') {
             bubbleEl.innerHTML = getMaterialIcon('refresh');
+        } else if (bubbleMode === 'clear') {
+            bubbleEl.innerHTML = getMaterialIcon('close');
         } else {
-            bubbleEl.innerHTML = getMaterialIcon('info');
+            bubbleEl.innerHTML = '<span class="qp-bubble-label">Fill</span>';
         }
     }
 
-    function updateBubbleState() { renderBubbleContent(); }
+    function updateBubbleState() {
+        renderBubbleContent();
+        if (getBubbleTab() === 'add') maybeShowChangelog();
+    }
 
     function setBubbleBusy(busy, progressText) {
         bubbleBusy = busy;
@@ -1678,15 +1779,17 @@
     function onBubbleTap() {
         if (bubbleBusy) return;
         const route = getBubbleTab();
-        if (route === 'personalize') { renderBubbleContent(); return; }
-        if (route === 'main') { showChangelog(); return; }
+        // Unsupported routes have no action: never fall through to a batch run.
+        if (route === 'unsupported') { renderBubbleContent(); return; }
+        // Clearing quantities is purely local, so it needs no API key.
+        if (route === 'add' && isBubbleActionClear()) { clearAllQuantities(); return; }
         if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
         if (route === 'manage') updateAllManagePrices();
         else fillAllItems();
     }
 
     function onBubbleLongPress() {
-        if (getBubbleTab() !== 'personalize') showSettingsPanel();
+        showSettingsPanel();
     }
 
     function createFloatingBubble() {
@@ -1718,6 +1821,10 @@
             dragging = false;
             didLongPress = false;
             bubbleEl.classList.remove('qp-bubble-dragging');
+            if (bubbleDragging) {
+                bubbleDragging = false;
+                renderBubbleContent();
+            }
         };
 
         bubbleEl.addEventListener('pointerdown', event => {
@@ -1752,7 +1859,9 @@
                 clearTimeout(longPressTimer);
                 longPressTimer = null;
                 dragging = true;
+                bubbleDragging = true;
                 bubbleEl.classList.add('qp-bubble-dragging');
+                renderBubbleContent();
             }
             if (!dragging) return;
             const { x, y } = clampBubblePosition(event.clientX - dragOffsetX, event.clientY - dragOffsetY);
@@ -1896,6 +2005,9 @@
         }));
         await Promise.all(promises);
         setBubbleBusy(false);
+        // The batch settled: the Add bubble now offers to clear the quantities
+        // it just wrote, whatever the individual fill results were.
+        setBubbleMode('clear');
         const failedCount = toFill.length - filled;
         let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
@@ -1961,8 +2073,14 @@
         setupObserver(bazaarRoot);
         processManageItems();
         createFloatingBubble();
-        updateBubbleState();
-        if (!CONFIG.apiKey) showApiKeyPrompt();
+        if (CONFIG.apiKey) {
+            updateBubbleState();
+        } else {
+            // The key prompt owns the screen first; its close path runs the
+            // changelog gate so the two modals never stack on first launch.
+            showApiKeyPrompt();
+            renderBubbleContent();
+        }
     }
 
     let isScriptInitialized = false;
@@ -2078,17 +2196,24 @@
             MATERIAL_ICONS,
             getMaterialIcon,
             getBubbleRoute,
+            getBubbleMode,
+            setBubbleMode,
+            isBubbleActionClear,
             isItemFilled,
             isActiveCategoryFilled,
             renderBubbleContent,
+            updateBubbleState,
             setBubbleBusy,
             updateBubbleProgress,
             createFloatingBubble,
             setupObserver,
             showApiKeyPrompt,
             showChangelog,
+            shouldShowChangelogForVersion,
+            markChangelogSeen,
             showSettingsPanel,
             fillAllItems,
+            clearAllQuantities,
             checkForBazaar,
             init
         };

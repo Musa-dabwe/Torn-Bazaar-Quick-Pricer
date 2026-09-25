@@ -801,6 +801,75 @@ describe('API v2 request queue integration', () => {
     });
 });
 
+function pointer(target, type, { x = 20, y = 30, pointerId = 1 } = {}) {
+    const event = new window.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+    Object.defineProperty(event, 'pointerId', { value: pointerId });
+    target.dispatchEvent(event);
+}
+
+function iconHtml(QP, name) {
+    const container = document.createElement('div');
+    container.innerHTML = QP.getMaterialIcon(name);
+    return container.innerHTML;
+}
+
+/**
+ * Mount an add-items row with a price input plus either a quantity text input or
+ * a quantity checkbox, matching the real Torn markup the selectors key off.
+ */
+function addQuantityRow({ price = '', quantity = '', checked = false, checkbox = false } = {}) {
+    const list = document.querySelector('ul.items-cont') || (() => {
+        const created = document.createElement('ul');
+        created.className = 'items-cont';
+        document.body.appendChild(created);
+        return created;
+    })();
+    const item = document.createElement('li');
+    item.className = 'clearfix';
+    const amount = document.createElement('div');
+    amount.className = 'amount-main-wrap';
+    let quantityControl;
+    if (checkbox) {
+        const wrap = document.createElement('div');
+        wrap.className = 'choice-container';
+        quantityControl = document.createElement('input');
+        quantityControl.type = 'checkbox';
+        quantityControl.checked = checked;
+        wrap.appendChild(quantityControl);
+        amount.appendChild(wrap);
+    } else {
+        quantityControl = document.createElement('input');
+        quantityControl.value = quantity;
+        amount.appendChild(quantityControl);
+    }
+    const priceWrap = document.createElement('div');
+    priceWrap.className = 'price';
+    const priceInput = document.createElement('input');
+    priceInput.value = price;
+    priceWrap.appendChild(priceInput);
+    item.append(amount, priceWrap);
+    list.appendChild(item);
+    return { item, priceInput, quantityControl };
+}
+
+/**
+ * Mount the floating bubble against a fresh script instance. Defaults to an
+ * already-seen changelog version so unrelated bubble tests are not interrupted
+ * by the first-Add changelog gate.
+ */
+function mountBubble(storage = {}, requestHandler = () => {}) {
+    const { QP, storage: loadedStorage } = loadScript(
+        { changelogSeenVersion: '2.9.4', ...storage },
+        requestHandler
+    );
+    const bubble = QP.createFloatingBubble();
+    bubble.setPointerCapture = vi.fn();
+    bubble.getBoundingClientRect = () => ({
+        left: 10, top: 20, right: 62, bottom: 72, width: 52, height: 52
+    });
+    return { QP, bubble, storage: loadedStorage };
+}
+
 describe('route-aware circular bubble', () => {
     beforeEach(() => {
         document.body.innerHTML = '';
@@ -808,21 +877,7 @@ describe('route-aware circular bubble', () => {
         vi.restoreAllMocks();
     });
 
-    function pointer(target, type, { x = 20, y = 30, pointerId = 1 } = {}) {
-        const event = new window.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
-        Object.defineProperty(event, 'pointerId', { value: pointerId });
-        target.dispatchEvent(event);
-    }
-
-    function makeBubble(storage = {}, requestHandler = () => {}) {
-        const { QP, storage: loadedStorage } = loadScript(storage, requestHandler);
-        const bubble = QP.createFloatingBubble();
-        bubble.setPointerCapture = vi.fn();
-        bubble.getBoundingClientRect = () => ({
-            left: 10, top: 20, right: 62, bottom: 72, width: 52, height: 52
-        });
-        return { QP, bubble, storage: loadedStorage };
-    }
+    const makeBubble = mountBubble;
 
     function addItem(price) {
         const list = document.createElement('ul');
@@ -841,10 +896,12 @@ describe('route-aware circular bubble', () => {
     }
 
     it.each([
-        ['', 'main'],
+        ['', 'unsupported'],
+        ['#/', 'unsupported'],
         ['#/add', 'add'],
         ['#/manage', 'manage'],
-        ['#/personalize', 'personalize']
+        ['#/personalize', 'unsupported'],
+        ['#/unknown', 'unsupported']
     ])('maps route %j to %s', (hash, route) => {
         const { QP } = loadScript();
         expect(QP.getBubbleRoute(hash)).toBe(route);
@@ -875,52 +932,37 @@ describe('route-aware circular bubble', () => {
         expect(QP.isActiveCategoryFilled()).toBe(false);
     });
 
-    it('renders the route icon, hides on Personalize, and refreshes on hashchange', () => {
+    it('hides the bubble on every unsupported route and renders Fill/refresh on Add/Manage', () => {
         const { QP, bubble } = makeBubble();
-        const expectedIcon = name => {
-            const container = document.createElement('div');
-            container.innerHTML = QP.getMaterialIcon(name);
-            return container.innerHTML;
-        };
-        expect(bubble.innerHTML).toBe(expectedIcon('info'));
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
 
         window.location.hash = '#/add';
         window.dispatchEvent(new window.HashChangeEvent('hashchange'));
-        expect(bubble.innerHTML).toBe(expectedIcon('inventory_2'));
-        expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(false);
+        expect(bubble.textContent).toBe('Fill');
+        expect(bubble.querySelector('svg')).toBeNull();
 
         window.location.hash = '#/manage';
         window.dispatchEvent(new window.HashChangeEvent('hashchange'));
-        expect(bubble.innerHTML).toBe(expectedIcon('refresh'));
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(false);
+        expect(bubble.innerHTML).toBe(iconHtml(QP, 'refresh'));
 
         window.location.hash = '#/personalize';
         window.dispatchEvent(new window.HashChangeEvent('hashchange'));
         expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
-    });
 
-    it('turns Add pink only when all currently visible rows are complete', () => {
         window.location.hash = '#/add';
-        const { QP, bubble } = makeBubble();
-        addItem('100');
-        addItem('');
-        QP.renderBubbleContent();
-        expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
-
-        document.querySelectorAll('.price input')[1].value = '250';
-        QP.renderBubbleContent();
-        expect(bubble.classList.contains('qp-bubble-filled')).toBe(true);
-        const expectedIcon = document.createElement('div');
-        expectedIcon.innerHTML = QP.getMaterialIcon('check_circle');
-        expect(bubble.innerHTML).toBe(expectedIcon.innerHTML);
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(false);
+        expect(bubble.textContent).toBe('Fill');
     });
 
-    it('refreshes pink completion from a real price input event without a request or scroll', () => {
+    it('re-renders the bubble on real input events without a request or scroll', () => {
         const root = document.createElement('div');
         root.id = 'bazaarRoot';
         document.body.appendChild(root);
         window.location.hash = '#/add';
-        addItem('100');
-        addItem('250');
+        const { priceInput } = addQuantityRow({ quantity: '2' });
         root.append(...document.querySelectorAll('.items-cont'));
         const requests = [];
         const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
@@ -931,12 +973,14 @@ describe('route-aware circular bubble', () => {
         input.value = '';
         input.dispatchEvent(new window.Event('input', { bubbles: true }));
 
+        expect(bubble.textContent).toBe('Fill');
         expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
         expect(requests).toHaveLength(0);
         expect(scrollTo).not.toHaveBeenCalled();
+        expect(priceInput.value).toBe('');
     });
 
-    it('returns from Personalize to Add and re-renders the bubble', () => {
+    it('returns from an unsupported route to Add and re-renders the bubble', () => {
         window.location.hash = '#/personalize';
         const { bubble } = makeBubble();
         expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
@@ -944,7 +988,7 @@ describe('route-aware circular bubble', () => {
         window.location.hash = '#/add';
         window.dispatchEvent(new window.HashChangeEvent('hashchange'));
         expect(bubble.classList.contains('qp-bubble-hidden')).toBe(false);
-        expect(bubble.querySelector('svg')).toBeTruthy();
+        expect(bubble.textContent).toBe('Fill');
     });
 
     it('clamps restored and resized positions to the viewport', () => {
@@ -963,6 +1007,7 @@ describe('route-aware circular bubble', () => {
     it('opens settings after the 350 ms long press and does not tap afterward', () => {
         vi.useFakeTimers();
         try {
+            window.location.hash = '#/add';
             const { bubble } = makeBubble();
             pointer(bubble, 'pointerdown');
             vi.advanceTimersByTime(349);
@@ -976,20 +1021,39 @@ describe('route-aware circular bubble', () => {
         }
     });
 
-    it('treats movement past 6 px as drag and suppresses settings and tap actions', () => {
+    it('renders the settings icon while dragging and restores the route state on release', () => {
         vi.useFakeTimers();
         try {
-            const { bubble } = makeBubble();
+            window.location.hash = '#/add';
+            const { QP, bubble } = makeBubble();
             pointer(bubble, 'pointerdown');
             pointer(bubble, 'pointermove', { x: 27, y: 30 });
             expect(bubble.classList.contains('qp-bubble-dragging')).toBe(true);
+            expect(bubble.innerHTML).toBe(iconHtml(QP, 'settings'));
             vi.advanceTimersByTime(350);
             pointer(bubble, 'pointerup');
 
             expect(document.querySelector('.qp-overlay')).toBeNull();
             expect(bubble.classList.contains('qp-bubble-dragging')).toBe(false);
+            expect(bubble.textContent).toBe('Fill');
             expect(bubble.style.left).toBe('17px');
             expect(bubble.style.top).toBe('20px');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('restores the route state when a drag is cancelled', () => {
+        vi.useFakeTimers();
+        try {
+            window.location.hash = '#/add';
+            const { QP, bubble } = makeBubble();
+            pointer(bubble, 'pointerdown');
+            pointer(bubble, 'pointermove', { x: 40, y: 30 });
+            expect(bubble.innerHTML).toBe(iconHtml(QP, 'settings'));
+            pointer(bubble, 'pointercancel');
+            expect(bubble.classList.contains('qp-bubble-dragging')).toBe(false);
+            expect(bubble.textContent).toBe('Fill');
         } finally {
             vi.useRealTimers();
         }
@@ -1007,12 +1071,15 @@ describe('route-aware circular bubble', () => {
         expect(document.querySelector('.qp-toast-error')?.textContent).toContain(expectedToast);
     });
 
-    it('opens the changelog through the main-route bubble tap path', () => {
+    it('performs no action on an unsupported-route bubble tap', () => {
         const { bubble } = makeBubble();
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
         pointer(bubble, 'pointerdown');
         pointer(bubble, 'pointerup');
 
-        expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+        expect(document.querySelector('.qp-overlay')).toBeNull();
+        expect(document.querySelector('.qp-toast')).toBeNull();
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
     });
 
     it('stays hidden and performs no action on a Personalize bubble tap', () => {
@@ -1050,15 +1117,19 @@ describe('route-aware circular bubble', () => {
     it('cancels before drag threshold and allows a later tap without long press', () => {
         vi.useFakeTimers();
         try {
-            const { bubble } = makeBubble();
+            window.location.hash = '#/add';
+            const { bubble } = makeBubble({ tornApiKey: 'abcDEF1234567890' });
             pointer(bubble, 'pointerdown', { pointerId: 4 });
             pointer(bubble, 'pointercancel', { pointerId: 4 });
             vi.advanceTimersByTime(350);
             expect(document.querySelector('.qp-overlay')).toBeNull();
 
+            // The cancelled gesture must not be replayed as a long press, and the
+            // later tap is a plain Add tap rather than a stale drag or tap.
             pointer(bubble, 'pointerdown', { pointerId: 5 });
             pointer(bubble, 'pointerup', { pointerId: 5 });
-            expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+            expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+            expect(document.querySelector('.qp-toast-error')?.textContent).toContain('No items found to fill!');
         } finally {
             vi.useRealTimers();
         }
@@ -1067,7 +1138,8 @@ describe('route-aware circular bubble', () => {
     it('cancels after drag threshold and allows a later tap without drag or long press', () => {
         vi.useFakeTimers();
         try {
-            const { bubble } = makeBubble();
+            window.location.hash = '#/add';
+            const { bubble } = makeBubble({ tornApiKey: 'abcDEF1234567890' });
             pointer(bubble, 'pointerdown', { pointerId: 6 });
             pointer(bubble, 'pointermove', { pointerId: 6, x: 30 });
             expect(bubble.classList.contains('qp-bubble-dragging')).toBe(true);
@@ -1076,9 +1148,10 @@ describe('route-aware circular bubble', () => {
             vi.advanceTimersByTime(350);
             expect(document.querySelector('.qp-overlay')).toBeNull();
 
+            // A later tap is a plain Add tap, which has no items to fill here.
             pointer(bubble, 'pointerdown', { pointerId: 8 });
             pointer(bubble, 'pointerup', { pointerId: 8 });
-            expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+            expect(document.querySelector('.qp-toast-error')?.textContent).toContain('No items found to fill!');
         } finally {
             vi.useRealTimers();
         }
@@ -1093,12 +1166,14 @@ describe('route-aware circular bubble', () => {
     });
 
     it.each(['Enter', ' '])('activates %s exactly once', key => {
-        const { bubble } = makeBubble();
+        window.location.hash = '#/add';
+        const { bubble } = makeBubble({ tornApiKey: 'abcDEF1234567890' });
         bubble.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
         bubble.dispatchEvent(new window.KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }));
 
-        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
-        expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+        expect(document.querySelectorAll('.qp-toast')).toHaveLength(1);
+        expect(document.querySelector('.qp-toast')?.textContent).toContain('No items found to fill!');
     });
 
     it('opens and closes the local v2.9.4 changelog by button, scrim, and Escape', () => {
@@ -1137,7 +1212,7 @@ describe('route-aware circular bubble', () => {
         expect(document.activeElement).not.toBe(document.querySelector('#qpApiKey'));
     });
 
-    it('shows batch progress and restores the route icon after completion', async () => {
+    it('shows batch progress and switches the Add bubble to the close icon after completion', async () => {
         vi.useFakeTimers();
         try {
             const requests = [];
@@ -1171,9 +1246,110 @@ describe('route-aware circular bubble', () => {
             expect(bubble.textContent).toBe('');
             expect(bubble.querySelector('.qp-bubble-progress')).toBeNull();
             expect(bubble.querySelector('svg')).toBeTruthy();
+            expect(QP.getBubbleMode()).toBe('clear');
+            expect(QP.isBubbleActionClear()).toBe(true);
+            expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
+            expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe('first-Add changelog gate', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        window.location.hash = '';
+        vi.restoreAllMocks();
+    });
+
+    it('reports unseen until the current version is marked', () => {
+        const fresh = loadScript();
+        expect(fresh.QP.shouldShowChangelogForVersion()).toBe(true);
+        fresh.QP.markChangelogSeen();
+        expect(fresh.storage.changelogSeenVersion).toBe('2.9.4');
+        expect(fresh.QP.shouldShowChangelogForVersion()).toBe(false);
+
+        const upgraded = loadScript({ changelogSeenVersion: '2.9.3' });
+        expect(upgraded.QP.shouldShowChangelogForVersion()).toBe(true);
+    });
+
+    it('opens the changelog once on the first Add visit and never again for that version', () => {
+        window.location.hash = '#/add';
+        const { QP, bubble, storage } = mountBubble({ changelogSeenVersion: '2.9.3' });
+
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+
+        document.querySelector('#qpChangelogClose').click();
+        expect(storage.changelogSeenVersion).toBe('2.9.4');
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+
+        QP.updateBubbleState();
+        QP.renderBubbleContent();
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+        expect(storage.changelogSeenVersion).toBe('2.9.4');
+        expect(bubble.textContent).toBe('Fill');
+    });
+
+    it('never opens the changelog on the base or Personalize route', () => {
+        const { QP, bubble, storage } = mountBubble({ changelogSeenVersion: '2.9.3' });
+        QP.updateBubbleState();
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+        expect(storage.changelogSeenVersion).toBe('2.9.3');
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+
+        window.location.hash = '#/personalize';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+        expect(storage.changelogSeenVersion).toBe('2.9.3');
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+    });
+
+    it('refuses to stack a second changelog overlay', () => {
+        const { QP } = loadScript();
+        QP.showChangelog();
+        QP.showChangelog();
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+    });
+
+    it('marks the version seen when closed by scrim or Escape', () => {
+        for (const close of [
+            overlay => overlay.click(),
+            overlay => overlay.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        ]) {
+            const { QP, storage } = loadScript();
+            QP.showChangelog();
+            close(document.querySelector('.qp-overlay'));
+            expect(storage.changelogSeenVersion).toBe('2.9.4');
+        }
+    });
+
+    it('runs the gate after the API-key prompt closes, without stacking overlays', () => {
+        const root = document.createElement('div');
+        root.id = 'bazaarRoot';
+        document.body.appendChild(root);
+        window.location.hash = '#/add';
+        const { QP, storage } = loadScript({ changelogSeenVersion: '2.9.3' });
+
+        QP.init();
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('#qpApiKey')).toBeTruthy();
+
+        // A route change while the prompt is open must not stack the changelog.
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-head__title')?.textContent).toBe('Quick Pricer');
+
+        document.querySelector('#qpCancel').click();
+        expect(document.querySelector('#qpApiKey')).toBeNull();
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+
+        document.querySelector('#qpChangelogClose').click();
+        expect(storage.changelogSeenVersion).toBe('2.9.4');
     });
 });
 
@@ -1200,5 +1376,206 @@ describe('price cache', () => {
         QP.clearPriceCache();
         expect(QP.getCachedPrice(206)).toBe(null);
         expect(storage.priceCache).toEqual({});
+    });
+});
+
+describe('clearAllQuantities', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        window.location.hash = '#/add';
+        vi.restoreAllMocks();
+    });
+
+    it('clears numeric quantity inputs, keeps prices, and reports the count', () => {
+        const requests = [];
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' }, options => requests.push(options));
+        addQuantityRow({ price: '1,250', quantity: '25' });
+        const second = addQuantityRow({ price: '90', quantity: '3' });
+
+        expect(QP.clearAllQuantities()).toBe(2);
+        expect(document.querySelectorAll('.amount-main-wrap input')).toHaveLength(2);
+        document.querySelectorAll('.amount-main-wrap input').forEach(input => {
+            expect(input.value).toBe('');
+        });
+        expect(document.querySelectorAll('.price input')[0].value).toBe('1,250');
+        expect(second.priceInput.value).toBe('90');
+        expect(requests).toHaveLength(0);
+        expect(document.querySelector('.qp-toast')?.textContent).toContain('Cleared quantities on 2 items');
+    });
+
+    it('unchecks quantity checkboxes and leaves unchecked rows alone', () => {
+        const requests = [];
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' }, options => requests.push(options));
+        const checked = addQuantityRow({ price: '500', checkbox: true, checked: true });
+        const unchecked = addQuantityRow({ price: '600', checkbox: true, checked: false });
+
+        expect(QP.clearAllQuantities()).toBe(1);
+        expect(checked.quantityControl.checked).toBe(false);
+        expect(unchecked.quantityControl.checked).toBe(false);
+        expect(checked.priceInput.value).toBe('500');
+        expect(unchecked.priceInput.value).toBe('600');
+        expect(requests).toHaveLength(0);
+        expect(document.querySelector('.qp-toast')?.textContent).toContain('Cleared quantities on 1 item');
+    });
+
+    it('ignores empty rows and reports nothing to clear', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        addQuantityRow({ price: '', quantity: '' });
+        addQuantityRow({ price: '10', checkbox: true, checked: false });
+
+        expect(QP.clearAllQuantities()).toBe(0);
+        expect(document.querySelectorAll('.price input')[1].value).toBe('10');
+        expect(document.querySelector('.qp-toast')?.textContent).toContain('No quantities to clear');
+    });
+
+    it('only touches currently loaded rows', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        const loaded = addQuantityRow({ price: '10', quantity: '2' });
+        const hiddenList = document.createElement('ul');
+        hiddenList.className = 'items-cont';
+        hiddenList.style.display = 'none';
+        const hiddenItem = document.createElement('li');
+        hiddenItem.className = 'clearfix';
+        const hiddenAmount = document.createElement('div');
+        hiddenAmount.className = 'amount-main-wrap';
+        const hiddenQuantity = document.createElement('input');
+        hiddenQuantity.value = '9';
+        hiddenAmount.appendChild(hiddenQuantity);
+        hiddenItem.appendChild(hiddenAmount);
+        hiddenList.appendChild(hiddenItem);
+        document.body.appendChild(hiddenList);
+
+        expect(QP.clearAllQuantities()).toBe(1);
+        expect(loaded.quantityControl.value).toBe('');
+        expect(hiddenQuantity.value).toBe('9');
+    });
+
+    it('resets the bubble to the Fill label after clearing', () => {
+        const { QP, bubble } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        addQuantityRow({ price: '10', quantity: '2' });
+        QP.setBubbleMode('clear');
+        expect(QP.getBubbleMode()).toBe('clear');
+        expect(QP.isBubbleActionClear()).toBe(true);
+        expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
+
+        QP.clearAllQuantities();
+
+        expect(QP.getBubbleMode()).toBe('fill');
+        expect(QP.isBubbleActionClear()).toBe(false);
+        expect(bubble.textContent).toBe('Fill');
+    });
+
+    it('falls back to the fill mode for an unknown mode value', () => {
+        const { QP } = mountBubble();
+        QP.setBubbleMode('clear');
+        QP.setBubbleMode('nonsense');
+        expect(QP.getBubbleMode()).toBe('fill');
+    });
+});
+
+describe('Fill and clear bubble actions', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        window.location.hash = '#/add';
+        vi.restoreAllMocks();
+    });
+
+    /** An add-items row that Quick Fill can price: image, title, quantity, price. */
+    function addFillableItem() {
+        const row = addQuantityRow({ price: '', quantity: '' });
+        const title = document.createElement('div');
+        title.className = 'title-wrap';
+        const imageWrap = document.createElement('div');
+        imageWrap.className = 'image-wrap';
+        const image = document.createElement('img');
+        image.src = 'https://www.torn.com/images/items/206/large.png';
+        imageWrap.appendChild(image);
+        title.appendChild(imageWrap);
+        row.item.prepend(title);
+        return row;
+    }
+
+    it('clears the quantities of a freshly filled item on the next Add tap', async () => {
+        vi.useFakeTimers();
+        try {
+            const requests = [];
+            const { QP, bubble } = mountBubble(
+                { tornApiKey: 'abcDEF1234567890' },
+                options => requests.push(options)
+            );
+            const row = addFillableItem();
+
+            const run = QP.fillAllItems();
+            await vi.advanceTimersByTimeAsync(0);
+            requests[0].onload({ responseText: JSON.stringify({ items: [
+                { id: 206, value: { market_price: 100, sell_price: 90 } }
+            ] }) });
+            await run;
+
+            expect(row.quantityControl.value).toBe('1');
+            expect(row.priceInput.value).toBe('100');
+            expect(QP.isBubbleActionClear()).toBe(true);
+
+            pointer(bubble, 'pointerdown', { pointerId: 11 });
+            pointer(bubble, 'pointerup', { pointerId: 11 });
+
+            expect(row.quantityControl.value).toBe('');
+            expect(row.priceInput.value).toBe('100');
+            expect(requests).toHaveLength(1);
+            expect(QP.getBubbleMode()).toBe('fill');
+            expect(bubble.textContent).toBe('Fill');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('switches to the clear state even when every price fetch failed', async () => {
+        vi.useFakeTimers();
+        try {
+            const requests = [];
+            const { QP, bubble } = mountBubble(
+                { tornApiKey: 'abcDEF1234567890' },
+                options => requests.push(options)
+            );
+            addFillableItem();
+
+            const run = QP.fillAllItems();
+            await vi.advanceTimersByTimeAsync(0);
+            // A v2 response with no usable item value falls back to v1, which
+            // still resolves the item (with a zero price) so the batch settles.
+            requests[0].onload({ responseText: JSON.stringify({ items: [{ id: 206 }] }) });
+            await vi.advanceTimersByTimeAsync(600);
+            expect(requests[1].url).toContain('/torn/206?selections=items');
+            requests[1].onload({ responseText: JSON.stringify({ items: {} }) });
+            await run;
+
+            expect(QP.getBubbleMode()).toBe('clear');
+            expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
+            expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('returns the Manage bubble to the refresh state after Update All', async () => {
+        vi.useFakeTimers();
+        try {
+            window.location.hash = '#/manage';
+            const requests = [];
+            const { QP, bubble } = mountBubble(
+                { tornApiKey: 'abcDEF1234567890' },
+                options => requests.push(options)
+            );
+            pointer(bubble, 'pointerdown', { pointerId: 12 });
+            pointer(bubble, 'pointerup', { pointerId: 12 });
+            await vi.advanceTimersByTimeAsync(0);
+
+            expect(requests).toHaveLength(0);
+            expect(document.querySelector('.qp-toast-error')?.textContent).toContain('No items found to update!');
+            expect(bubble.innerHTML).toBe(iconHtml(QP, 'refresh'));
+            expect(QP.getBubbleMode()).toBe('fill');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
