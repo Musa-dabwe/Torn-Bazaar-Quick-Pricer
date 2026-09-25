@@ -967,10 +967,11 @@
         return { values, parsedIds };
     }
 
-    const requestQueue = [];            // { itemId, retries } waiting to be fetched
+    const requestQueue = [];            // queue entries waiting to be fetched
     const pendingRequests = new Map();  // itemId -> callback[] (queued or in flight)
     let isProcessingQueue = false;
     let queueHalted = false;            // set when a fatal API error stops the run
+    let requestQueueTimer = null;
 
     const REQUEST_SPACING_MS = 600;         // ≤100 req/min, Torn's documented limit
     const REQUEST_TIMEOUT_MS = 15000;
@@ -1005,17 +1006,87 @@
         if (isProcessingQueue || requestQueue.length === 0) return;
         if (queueHalted) { failAllPending(); return; }
         isProcessingQueue = true;
-        const { itemId, retries } = requestQueue.shift();
 
         const releaseAndContinue = (delay) => {
             isProcessingQueue = false;
             setTimeout(processRequestQueue, delay);
         };
+        const fallbackToV1 = (itemIds, delay = REQUEST_SPACING_MS) => {
+            requestQueue.unshift(...itemIds.map(itemId => ({ type: 'v1', itemIds: [itemId], retries: 0 })));
+            releaseAndContinue(delay);
+        };
+        const handleFatal = code => {
+            if (code === 2) CONFIG.apiKey = '';
+            queueHalted = true;
+            notifyApiError(FATAL_API_ERRORS[code]);
+            failAllPending();
+        };
+
+        const entry = requestQueue.shift();
+        if (entry.type === 'v2-batch') {
+            const itemIds = [...entry.itemIds];
+            while (itemIds.length < V2_BATCH_SIZE && requestQueue[0]?.type === 'v2-batch') {
+                itemIds.push(...requestQueue.shift().itemIds.slice(0, V2_BATCH_SIZE - itemIds.length));
+            }
+            let fallbackQueued = false;
+            const fallbackOnce = () => {
+                if (fallbackQueued) return;
+                fallbackQueued = true;
+                fallbackToV1(itemIds);
+            };
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: buildV2ItemsUrl(itemIds, CONFIG.apiKey),
+                timeout: REQUEST_TIMEOUT_MS,
+                onload: response => {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.error) {
+                            const code = data.error.code;
+                            if (FATAL_API_ERRORS[code]) {
+                                handleFatal(code);
+                                return;
+                            }
+                            if (code === 5 && entry.retries < RATE_LIMIT_MAX_RETRIES) {
+                                requestQueue.unshift({ type: 'v2-batch', itemIds, retries: entry.retries + 1 });
+                                releaseAndContinue(RATE_LIMIT_RETRY_DELAY_MS);
+                                return;
+                            }
+                            console.warn(`[BazaarQuickPricer] API error ${code}: ${data.error.error}`);
+                            fallbackOnce();
+                            return;
+                        }
+                        const parsed = parseV2ItemsResponse(data, itemIds);
+                        if (!Array.isArray(data.items) || data.items.length === 0 || parsed.parsedIds.length === 0) {
+                            fallbackOnce();
+                            return;
+                        }
+                        parsed.parsedIds.forEach(itemId => {
+                            const value = parsed.values[itemId];
+                            cachePrice(itemId, value.marketValue, value.sellPrice);
+                            finishRequest(itemId, value);
+                        });
+                        itemIds.filter(itemId => !parsed.parsedIds.includes(itemId))
+                            .forEach(itemId => finishRequest(itemId, { marketValue: 0, sellPrice: 0 }));
+                        releaseAndContinue(REQUEST_SPACING_MS);
+                    } catch (e) {
+                        console.error('[BazaarQuickPricer] Parse error:', e);
+                        fallbackOnce();
+                    }
+                },
+                onerror: fallbackOnce,
+                ontimeout: fallbackOnce,
+                onabort: fallbackOnce
+            });
+            return;
+        }
+
+        const { itemIds, retries } = entry;
+        const itemId = itemIds[0];
         const failItem = () => {
             finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
             releaseAndContinue(REQUEST_SPACING_MS);
         };
-
         GM_xmlhttpRequest({
             method: 'GET',
             url: `https://api.torn.com/torn/${itemId}?selections=items&key=${CONFIG.apiKey}`,
@@ -1026,16 +1097,11 @@
                     if (data.error) {
                         const code = data.error.code;
                         if (FATAL_API_ERRORS[code]) {
-                            if (code === 2) CONFIG.apiKey = '';
-                            queueHalted = true;
-                            notifyApiError(FATAL_API_ERRORS[code]);
-                            finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
-                            failAllPending();
+                            handleFatal(code);
                             return;
                         }
                         if (code === 5 && retries < RATE_LIMIT_MAX_RETRIES) {
-                            console.warn('[BazaarQuickPricer] Rate limited, backing off...');
-                            requestQueue.unshift({ itemId, retries: retries + 1 });
+                            requestQueue.unshift({ type: 'v1', itemIds, retries: retries + 1 });
                             releaseAndContinue(RATE_LIMIT_RETRY_DELAY_MS);
                             return;
                         }
@@ -1065,6 +1131,14 @@
         });
     }
 
+    function scheduleRequestQueue() {
+        if (requestQueueTimer !== null) return;
+        requestQueueTimer = setTimeout(() => {
+            requestQueueTimer = null;
+            processRequestQueue();
+        }, 0);
+    }
+
     /**
      * Get {marketValue, sellPrice} for an item — served from cache when fresh,
      * otherwise queued behind the rate-limited request queue. The callback is
@@ -1087,8 +1161,8 @@
             queueHalted = false;
         }
         pendingRequests.set(itemId, [callback]);
-        requestQueue.push({ itemId, retries: 0 });
-        processRequestQueue();
+        requestQueue.push({ type: 'v2-batch', itemIds: [itemId], retries: 0 });
+        scheduleRequestQueue();
     }
 
     // =====================================================================
@@ -1794,6 +1868,7 @@
             V2_BATCH_SIZE,
             buildV2ItemsUrl,
             parseV2ItemsResponse,
+            fetchItemData,
             getCachedPrice,
             cachePrice,
             clearPriceCache,
