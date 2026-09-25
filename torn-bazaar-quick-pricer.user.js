@@ -347,6 +347,7 @@
             box-shadow: none;
         }
         .qp-item-btn.qp-btn-red:hover { background: #f6dede !important; }
+        .qp-item-btn svg { width: 18px; height: 18px; display: block; }
 
         .quick-price-btn, .quick-update-price-btn {
             display: flex; align-items: center; flex-shrink: 0;
@@ -391,15 +392,20 @@
         .qp-head { display: flex; align-items: center; gap: 10px; padding: 18px 18px 0; }
         .qp-head__badge {
             flex: none; width: 40px; height: 40px; border-radius: 11px;
-            background: var(--qp-accent-bg);
+            background: var(--qp-accent-bg); color: var(--qp-accent);
             display: flex; align-items: center; justify-content: center;
         }
+        .qp-head__badge svg { width: 22px; height: 22px; display: block; }
+        .qp-head__badge--warn { color: var(--qp-warn); }
+        .qp-head__badge--rw { color: var(--qp-rw); }
         .qp-head__badge--warn { background: var(--qp-warn-bg); font-size: 16px; }
         .qp-head__badge--rw   { background: var(--qp-rw-bg);   font-size: 16px; position: relative; }
         .qp-head__badge--rw .qp-rw-dot { position: absolute; right: -4px; top: -4px; margin: 0; width: 10px; height: 10px; background: var(--qp-rw); }
         .qp-head__title { font: 800 15px/1.15 var(--qp-font); color: var(--qp-ink); }
         .qp-head__sub   { font: 700 11.5px/1.3 var(--qp-font); color: var(--qp-muted); margin-top: 1px; }
         .qp-head__sub a { color: var(--qp-accent); font-weight: 800; text-decoration: none; }
+        .qp-external-link { display: inline-flex; align-items: center; gap: 2px; }
+        .qp-external-link svg { width: 12px; height: 12px; }
         .qp-close {
             margin-left: auto; width: 28px; height: 28px; border-radius: 50%;
             background: #f4f2fa; border: none; cursor: pointer;
@@ -408,6 +414,7 @@
             flex: none;
         }
         .qp-close:hover { background: #e9e5f6; }
+        .qp-close svg { width: 16px; height: 16px; display: block; }
         .qp-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
 
         /* ── FIELDS ── */
@@ -429,6 +436,7 @@
             display: flex; align-items: center;
         }
         .qp-eye-toggle:hover { color: var(--qp-ink); }
+        .qp-eye-toggle svg { width: 18px; height: 18px; display: block; }
 
         /* note strip (security hint) */
         .qp-note {
@@ -498,7 +506,9 @@
         .qp-btn {
             border: none; cursor: pointer; border-radius: 12px !important; padding: 11px 0;
             font: 900 13.5px var(--qp-font); text-align: center; flex: 1;
+            display: inline-flex; align-items: center; justify-content: center; gap: 7px;
         }
+        .qp-btn svg { width: 17px; height: 17px; flex: none; display: block; }
         .qp-btn--primary {
             background: var(--qp-accent); color: #fff;
             box-shadow: 0 4px 12px rgba(122,107,214,.35);
@@ -542,6 +552,7 @@
             cursor: grab; flex-shrink: 0; user-select: none;
         }
         .qp-chip-grip:active { cursor: grabbing; }
+        .qp-chip-grip svg { width: 16px; height: 16px; display: block; }
         .qp-chip-fill {
             border: none; cursor: pointer;
             background: var(--qp-accent) !important; color: #fff !important;
@@ -563,6 +574,7 @@
             display: flex; align-items: center; justify-content: center;
         }
         .qp-chip-gear:hover { background: #e9e5f6 !important; }
+        .qp-chip-gear svg { width: 18px; height: 18px; display: block; }
 
         /* ── TOASTS ── */
         .qp-toast-wrap {
@@ -586,6 +598,7 @@
             display: flex; align-items: center; justify-content: center;
             font: 900 12px var(--qp-font);
         }
+        .qp-toast__icon svg { width: 15px; height: 15px; display: block; }
         .qp-toast-success .qp-toast__icon { background: var(--qp-ok-bg);     color: var(--qp-ok); }
         .qp-toast-error   .qp-toast__icon { background: var(--qp-danger-bg); color: var(--qp-danger); }
         .qp-toast-info    .qp-toast__icon { background: var(--qp-warn-bg);   color: var(--qp-warn); font-size: 11px; }
@@ -613,7 +626,7 @@
     });
 
     function getMaterialIcon(name) {
-        return MATERIAL_ICONS[name] || null;
+        return Object.hasOwn(MATERIAL_ICONS, name) ? MATERIAL_ICONS[name] : null;
     }
     // =====================================================================
     // UI HELPERS
@@ -672,7 +685,9 @@
         toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
         const icon = document.createElement('span');
         icon.className = 'qp-toast__icon';
-        icon.textContent = kind === 'success' ? '✓' : kind === 'error' ? '!' : 'i';
+        icon.innerHTML = kind === 'success' ? getMaterialIcon('check_circle')
+            : kind === 'error' ? getMaterialIcon('error')
+            : getMaterialIcon('info');
         const text = document.createElement('span');
         text.textContent = message;
         toast.appendChild(icon);
@@ -693,7 +708,7 @@
             overlay.innerHTML = `
                 <div class="qp-modal">
                     <div class="qp-head">
-                        <div class="qp-head__badge ${rw ? 'qp-head__badge--rw' : 'qp-head__badge--warn'}">${rw ? '🗡️<span class="qp-rw-dot"></span>' : '⚠️'}</div>
+                        <div class="qp-head__badge ${rw ? 'qp-head__badge--rw' : 'qp-head__badge--warn'}">${rw ? getMaterialIcon('sports_martial_arts') : getMaterialIcon('warning')}${rw ? '<span class="qp-rw-dot"></span>' : ''}</div>
                         <div class="qp-head__title">${opts.title || 'Confirm'}</div>
                     </div>
                     <div class="qp-body">
@@ -731,7 +746,7 @@
                         <div class="qp-head__title">Quick Pricer</div>
                         <div class="qp-head__sub">Needs your public API key</div>
                     </div>
-                    <button class="qp-close" id="qpCancel" aria-label="Close">✕</button>
+                    <button class="qp-close" id="qpCancel" aria-label="Close">${getMaterialIcon('close')}</button>
                 </div>
                 <div class="qp-body">
                     <div>
@@ -780,9 +795,9 @@
                     <div class="qp-head__badge">${getMaterialIcon('settings')}</div>
                     <div>
                         <div class="qp-head__title">Quick Pricer settings</div>
-                        <div class="qp-head__sub">v${VERSION} · <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" rel="noopener">GitHub</a></div>
+                        <div class="qp-head__sub">v${VERSION} · <a class="qp-external-link" href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" rel="noopener">GitHub ${getMaterialIcon('open_in_new')}</a></div>
                     </div>
-                    <button class="qp-close" id="qpCancel" aria-label="Close">✕</button>
+                    <button class="qp-close" id="qpCancel" aria-label="Close">${getMaterialIcon('close')}</button>
                 </div>
                 <div class="qp-body">
                     <div>
@@ -850,7 +865,7 @@
                         </div>
                     </div>
                     <div class="qp-btn-row">
-                        <button class="qp-btn qp-btn--danger" id="qpClearCache">Clear cache</button>
+                        <button class="qp-btn qp-btn--danger" id="qpClearCache">${getMaterialIcon('inventory_2')} Clear cache</button>
                         <button class="qp-btn qp-btn--primary" id="qpSave" style="flex:1.4;font-size:12.5px">Save settings</button>
                     </div>
                 </div>
@@ -1271,7 +1286,13 @@
                         }
                     }
                     const btn = itemElement.querySelector('.quick-price-btn button');
-                    if (btn) { btn.classList.add('qp-btn-red'); btn.dataset.mode = 'undo'; }
+                    if (btn) {
+                        btn.classList.add('qp-btn-red');
+                        btn.dataset.mode = 'undo';
+                        btn.innerHTML = getMaterialIcon('undo');
+                        btn.title = 'Undo Quick Fill';
+                        btn.setAttribute('aria-label', btn.title);
+                    }
                     resolve(true);
                     return;
                 } else {
@@ -1564,7 +1585,7 @@
         chipEl = document.createElement('div');
         chipEl.className = 'qp-chip';
         chipEl.innerHTML = `
-            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">⋮⋮</div>
+            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">${getMaterialIcon('more_vert')}</div>
             <button class="qp-chip-fill" id="qpChipFill">Quick Fill</button>
             <button class="qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${getMaterialIcon('settings')}</button>
         `;
@@ -1707,6 +1728,11 @@
                 clearItemInputs(itemElement);
                 btnInput.classList.remove('qp-btn-red');
                 btnInput.dataset.mode = 'add';
+                btnInput.innerHTML = getMaterialIcon('add');
+                btnInput.title = rwInfo.isRanked
+                    ? `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`
+                    : 'Quick Add / Undo';
+                btnInput.setAttribute('aria-label', btnInput.title);
                 return;
             }
             if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }

@@ -15,9 +15,11 @@ Copyright Google LLC.
 
 ## Source files
 
-Each asset was downloaded from the official Google Fonts CDN URL shown below.
-The CDN serves the same Material icon assets maintained by the upstream Google
-project.
+Each reviewed asset was downloaded from the official Google Fonts CDN URL shown
+below. These CDN resources represent legacy Material icon serializations and may
+come from different upstream revisions; the files are not claimed to be byte-for-byte
+copies from one identical repository revision. Their semantic names and vector
+content are reviewed against the official Google Material project.
 
 - `add.svg`: https://fonts.gstatic.com/s/i/materialicons/add/v1/24px.svg
 - `check_circle.svg`: https://fonts.gstatic.com/s/i/materialicons/check_circle/v1/24px.svg

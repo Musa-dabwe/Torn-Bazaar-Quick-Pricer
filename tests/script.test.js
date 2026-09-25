@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi } from 'vitest';
 import { loadScript } from './load-script.js';
+
+const testDir = dirname(fileURLToPath(import.meta.url));
 
 describe('Material icon map', () => {
     const { QP } = loadScript();
@@ -9,11 +14,32 @@ describe('Material icon map', () => {
         'sports_martial_arts', 'open_in_new', 'close', 'more_vert'
     ];
 
-    it.each(requiredIcons)('maps %s to a normalized currentColor SVG', name => {
-        expect(QP.getMaterialIcon(name)).toEqual(expect.any(String));
-        expect(QP.getMaterialIcon(name)).toContain('viewBox="0 0 24 24"');
-        expect(QP.getMaterialIcon(name)).toContain('fill="currentColor"');
-        expect(QP.getMaterialIcon(name)).toContain('aria-hidden="true"');
+    it.each(requiredIcons)('maps %s to a normalized, parseable SVG with path data', name => {
+        const icon = QP.getMaterialIcon(name);
+        expect(icon).toEqual(expect.any(String));
+        expect(icon).toContain('viewBox="0 0 24 24"');
+        expect(icon).toContain('fill="currentColor"');
+        expect(icon).toContain('aria-hidden="true"');
+
+        const container = document.createElement('div');
+        container.innerHTML = icon;
+        const svg = container.querySelector('svg');
+        expect(svg).toBeTruthy();
+        const vectorData = svg.querySelector('path[d], polygon[points], circle[r]');
+        expect(vectorData).toBeTruthy();
+        expect(vectorData.getAttribute('d') || vectorData.getAttribute('points') || vectorData.getAttribute('r')).toBeTruthy();
+    });
+
+    it.each(requiredIcons)('embeds the reviewed path data for %s', name => {
+        const sourcePath = resolve(testDir, `../docs/assets/material-icons/${name}.svg`);
+        const source = readFileSync(sourcePath, 'utf8');
+        const sourceContainer = document.createElement('div');
+        sourceContainer.innerHTML = source;
+        const mappedContainer = document.createElement('div');
+        mappedContainer.innerHTML = QP.getMaterialIcon(name);
+
+        expect(mappedContainer.querySelector('svg').innerHTML)
+            .toBe(sourceContainer.querySelector('svg').innerHTML);
     });
 
     it('exposes every required semantic name in the centralized map', () => {
@@ -25,8 +51,26 @@ describe('Material icon map', () => {
         expect(new Set(renderedIcons).size).toBe(requiredIcons.length);
     });
 
-    it('returns null for an unknown icon name', () => {
-        expect(QP.getMaterialIcon('not_a_material_icon')).toBe(null);
+    it.each(['not_a_material_icon', 'toString', 'constructor', '__proto__'])(
+        'returns null for the unsafe or unknown name %s', name => {
+            expect(QP.getMaterialIcon(name)).toBe(null);
+        }
+    );
+
+    it('sizes every inline icon context and colors header badges violet', () => {
+        const css = document.getElementById('qp-style').textContent;
+        ['.qp-item-btn svg', '.qp-chip-gear svg', '.qp-head__badge svg', '.qp-eye-toggle svg', '.qp-toast__icon svg', '.qp-btn svg']
+            .forEach(selector => expect(css).toContain(`${selector} {`));
+        expect(css).toMatch(/\.qp-head__badge\s*\{[^}]*color:\s*var\(--qp-accent\)/);
+    });
+
+    it('wires mapped icons into status, confirmation, close, overflow, and undo UI paths', () => {
+        const script = readFileSync(resolve(testDir, '../torn-bazaar-quick-pricer.user.js'), 'utf8');
+        ['check_circle', 'error', 'info', 'warning', 'sports_martial_arts', 'inventory_2', 'undo', 'open_in_new', 'close', 'more_vert']
+            .forEach(name => {
+                const uses = script.match(new RegExp(`getMaterialIcon\\('${name}'\\)`, 'g')) || [];
+                expect(uses.length).toBeGreaterThanOrEqual(1);
+            });
     });
 });
 
