@@ -802,11 +802,16 @@
     }
 
     /**
-     * Run the once-per-version changelog gate. Skipped entirely when another
-     * script overlay (e.g. the API-key prompt) is already up, so the modals
-     * never stack; the dismissing prompt calls this again once it is gone.
+     * Run the once-per-version changelog gate. The route check lives here, not at
+     * the call sites, because the API-key prompt's close paths call this from any
+     * route: opening the changelog on an unsupported route would both show UI
+     * where no bubble exists and mark the version seen, so the user would never
+     * see it on the first real Add visit. Also skipped while another script
+     * overlay (e.g. the API-key prompt) is up, so the modals never stack; the
+     * dismissing prompt calls this again once it is gone.
      */
     function maybeShowChangelog() {
+        if (getBubbleTab() !== 'add') return false;
         if (!shouldShowChangelogForVersion() || changelogOpen) return false;
         if (document.querySelector('.qp-overlay')) return false;
         showChangelog();
@@ -1351,7 +1356,10 @@
                 }
                 return;
             }
-            const quantityInput = amountDiv.querySelector('input');
+            // Explicitly exclude checkboxes: a row can carry a checkbox the
+            // quantity-checkbox selector did not match, and clicking/blanking
+            // that would corrupt its checked state instead of clearing a quantity.
+            const quantityInput = amountDiv.querySelector('input:not([type=checkbox])');
             if (quantityInput && String(quantityInput.value || '').trim() !== '') {
                 quantityInput.value = '';
                 quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1713,49 +1721,44 @@
         bubbleEl.style.transform = 'none';
     }
 
-    function isItemFilled(itemElement) {
-        const priceWrap = itemElement.querySelector(SELECTORS.priceWrap);
-        if (!priceWrap) return false;
-        return Array.from(priceWrap.querySelectorAll('input')).some(input => {
-            const raw = String(input.value || '').trim();
-            if (raw === '') return false;
-            const value = Number(raw.replace(/,/g, ''));
-            return Number.isFinite(value) && value > 0;
-        });
-    }
-
-    function isActiveCategoryFilled() {
-        const items = getVisibleItems();
-        return items.length > 0 && items.every(isItemFilled);
-    }
+    /** The accessible name announced for each rendered bubble state. */
+    const BUBBLE_LABELS = Object.freeze({
+        fill: 'Quick Fill',
+        clear: 'Clear quantities',
+        manage: 'Update all prices'
+    });
 
     function renderBubbleContent() {
         if (!bubbleEl || bubbleBusy) return;
-        // While dragging, the settings icon hints that the gesture moves the
-        // bubble; the route state is restored on release or cancel.
-        if (bubbleDragging) {
-            bubbleEl.classList.remove('qp-bubble-hidden');
-            bubbleEl.innerHTML = getMaterialIcon('settings');
-            return;
-        }
         const route = getBubbleTab();
+        // Unsupported routes hide the bubble, and no transient state may reveal
+        // it: the drag branch deliberately does not touch qp-bubble-hidden.
         if (route === 'unsupported') {
             bubbleEl.classList.add('qp-bubble-hidden');
             return;
         }
         bubbleEl.classList.remove('qp-bubble-hidden');
+        // While dragging, the settings icon hints that the gesture moves the
+        // bubble; the route state is restored on release or cancel.
+        if (bubbleDragging) {
+            bubbleEl.innerHTML = getMaterialIcon('settings');
+            return;
+        }
         if (route === 'manage') {
             bubbleEl.innerHTML = getMaterialIcon('refresh');
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.manage);
         } else if (bubbleMode === 'clear') {
             bubbleEl.innerHTML = getMaterialIcon('close');
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.clear);
         } else {
             bubbleEl.innerHTML = '<span class="qp-bubble-label">Fill</span>';
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.fill);
         }
     }
 
     function updateBubbleState() {
         renderBubbleContent();
-        if (getBubbleTab() === 'add') maybeShowChangelog();
+        maybeShowChangelog();
     }
 
     function setBubbleBusy(busy, progressText) {
@@ -1919,7 +1922,13 @@
             bubbleEl.style.left = `${x}px`;
             bubbleEl.style.top = `${y}px`;
         });
-        window.addEventListener('hashchange', updateBubbleState);
+        // A route change ends the previous session's post-fill state: coming back
+        // to Add must offer Quick Fill, not a Clear action for quantities the
+        // user may already have cleared.
+        window.addEventListener('hashchange', () => {
+            setBubbleMode('fill');
+            updateBubbleState();
+        });
         return bubbleEl;
     }
 
@@ -2199,8 +2208,6 @@
             getBubbleMode,
             setBubbleMode,
             isBubbleActionClear,
-            isItemFilled,
-            isActiveCategoryFilled,
             renderBubbleContent,
             updateBubbleState,
             setBubbleBusy,

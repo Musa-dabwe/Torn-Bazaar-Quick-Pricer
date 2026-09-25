@@ -907,31 +907,6 @@ describe('route-aware circular bubble', () => {
         expect(QP.getBubbleRoute(hash)).toBe(route);
     });
 
-    it('reports complete only when every visible row has a positive non-empty price', () => {
-        const requests = [];
-        const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
-        const { QP } = loadScript({}, options => requests.push(options));
-        addItem('1,250');
-        addItem('42');
-
-        expect(QP.isActiveCategoryFilled()).toBe(true);
-        expect(scrollTo).not.toHaveBeenCalled();
-        expect(requests).toHaveLength(0);
-    });
-
-    it.each(['0', ''])('reports incomplete when a visible row price is %j', price => {
-        addItem('100');
-        addItem(price);
-        const { QP } = loadScript();
-
-        expect(QP.isActiveCategoryFilled()).toBe(false);
-    });
-
-    it('reports incomplete for an empty visible category', () => {
-        const { QP } = loadScript();
-        expect(QP.isActiveCategoryFilled()).toBe(false);
-    });
-
     it('hides the bubble on every unsupported route and renders Fill/refresh on Add/Manage', () => {
         const { QP, bubble } = makeBubble();
         expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
@@ -974,10 +949,48 @@ describe('route-aware circular bubble', () => {
         input.dispatchEvent(new window.Event('input', { bubbles: true }));
 
         expect(bubble.textContent).toBe('Fill');
-        expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
         expect(requests).toHaveLength(0);
         expect(scrollTo).not.toHaveBeenCalled();
         expect(priceInput.value).toBe('');
+    });
+
+    it('announces the current action through the bubble accessible label', () => {
+        window.location.hash = '#/add';
+        const { QP, bubble } = makeBubble();
+        expect(bubble.getAttribute('aria-label')).toBe('Quick Fill');
+
+        QP.setBubbleMode('clear');
+        expect(bubble.getAttribute('aria-label')).toBe('Clear quantities');
+
+        QP.setBubbleMode('fill');
+        expect(bubble.getAttribute('aria-label')).toBe('Quick Fill');
+    });
+
+    it('keeps the Manage label distinct from the Add states', () => {
+        window.location.hash = '#/manage';
+        const { bubble } = makeBubble();
+        expect(bubble.getAttribute('aria-label')).toBe('Update all prices');
+    });
+
+    it('resets the Add mode to fill when the route changes', () => {
+        window.location.hash = '#/add';
+        const { QP, bubble } = makeBubble();
+        QP.setBubbleMode('clear');
+        expect(QP.getBubbleMode()).toBe('clear');
+
+        window.location.hash = '#/manage';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(QP.getBubbleMode()).toBe('fill');
+
+        QP.setBubbleMode('clear');
+        window.location.hash = '#/personalize';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        window.location.hash = '#/add';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+
+        expect(QP.getBubbleMode()).toBe('fill');
+        expect(QP.isBubbleActionClear()).toBe(false);
+        expect(bubble.textContent).toBe('Fill');
     });
 
     it('returns from an unsupported route to Add and re-renders the bubble', () => {
@@ -1038,6 +1051,29 @@ describe('route-aware circular bubble', () => {
             expect(bubble.textContent).toBe('Fill');
             expect(bubble.style.left).toBe('17px');
             expect(bubble.style.top).toBe('20px');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('keeps the bubble hidden on an unsupported route even while dragging', () => {
+        vi.useFakeTimers();
+        try {
+            window.location.hash = '#/personalize';
+            const { QP, bubble } = makeBubble();
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+
+            pointer(bubble, 'pointerdown', { pointerId: 21 });
+            pointer(bubble, 'pointermove', { pointerId: 21, x: 40, y: 30 });
+
+            // The drag icon is transient, but it must never un-hide the bubble on
+            // a route that has no bubble at all.
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+            pointer(bubble, 'pointerup', { pointerId: 21 });
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+            expect(bubble.className).not.toContain('qp-bubble-dragging');
+            QP.renderBubbleContent();
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
         } finally {
             vi.useRealTimers();
         }
@@ -1249,7 +1285,7 @@ describe('route-aware circular bubble', () => {
             expect(QP.getBubbleMode()).toBe('clear');
             expect(QP.isBubbleActionClear()).toBe(true);
             expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
-            expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
+            expect(bubble.getAttribute('aria-label')).toBe('Clear quantities');
         } finally {
             vi.useRealTimers();
         }
@@ -1326,6 +1362,30 @@ describe('first-Add changelog gate', () => {
             expect(storage.changelogSeenVersion).toBe('2.9.4');
         }
     });
+
+    it.each(['', '#/', '#/personalize'])(
+        'does not open or mark the changelog when the prompt closes on route %j',
+        route => {
+            const root = document.createElement('div');
+            root.id = 'bazaarRoot';
+            document.body.appendChild(root);
+            window.location.hash = route;
+            const { QP, storage } = loadScript({ changelogSeenVersion: '2.9.3' });
+
+            QP.init();
+            expect(document.querySelector('#qpApiKey')).toBeTruthy();
+
+            document.querySelector('#qpCancel').click();
+            expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+            // Critically: the version must stay un-seen so the changelog can still
+            // appear when the user actually visits Add.
+            expect(storage.changelogSeenVersion).toBe('2.9.3');
+
+            window.location.hash = '#/add';
+            window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+            expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+        }
+    );
 
     it('runs the gate after the API-key prompt closes, without stacking overlays', () => {
         const root = document.createElement('div');
@@ -1426,6 +1486,21 @@ describe('clearAllQuantities', () => {
         expect(QP.clearAllQuantities()).toBe(0);
         expect(document.querySelectorAll('.price input')[1].value).toBe('10');
         expect(document.querySelector('.qp-toast')?.textContent).toContain('No quantities to clear');
+    });
+
+    it('never mis-targets a checkbox on a row that also has a numeric quantity', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        const row = addQuantityRow({ price: '20', quantity: '4' });
+        // A checkbox that the quantity-checkbox selector does not match must not
+        // be treated as the numeric quantity input.
+        const strayCheckbox = document.createElement('input');
+        strayCheckbox.type = 'checkbox';
+        strayCheckbox.checked = true;
+        row.item.querySelector('.amount-main-wrap').prepend(strayCheckbox);
+
+        expect(QP.clearAllQuantities()).toBe(1);
+        expect(strayCheckbox.checked).toBe(true);
+        expect(row.quantityControl.value).toBe('');
     });
 
     it('only touches currently loaded rows', () => {
@@ -1551,7 +1626,7 @@ describe('Fill and clear bubble actions', () => {
 
             expect(QP.getBubbleMode()).toBe('clear');
             expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
-            expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
+            expect(bubble.getAttribute('aria-label')).toBe('Clear quantities');
         } finally {
             vi.useRealTimers();
         }
