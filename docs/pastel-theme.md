@@ -126,7 +126,11 @@ represent differing legacy serializations, so they are not claimed to be byte-fo
 copies from one repository revision. Paths are normalized to a 24×24 viewBox, use
 `currentColor`, and are inlined so the single-file PDA userscript needs no runtime icon
 request. `docs/assets/material-icons/README.md` records every CDN URL, review status,
-and Apache License 2.0 attribution.
+and Apache License 2.0 attribution. Icons with no remaining consumer
+(`inventory_2`, `more_vert`) were removed from the map and from the provenance
+assets; the retained set is `info`, `refresh`, `settings`, `key`, `add`, `undo`,
+`visibility`, `visibility_off`, `check_circle`, `error`, `warning`,
+`sports_martial_arts`, `open_in_new`, and `close`.
 
 ## Components
 
@@ -139,7 +143,8 @@ A fixed full-screen scrim centers a white card that is 320 px wide, capped at
 <div class="qp-overlay">
   <div class="qp-modal">
     <div class="qp-head">
-      <div class="qp-head__badge"><!-- 40x40 accent-tinted icon badge --></div>
+      <button type="button" class="qp-head__badge qp-head__badge--action"
+              aria-label="What's new in Quick Pricer"><!-- Material info SVG --></button>
       <div>
         <div class="qp-head__title">Quick Pricer settings</div>
         <div class="qp-head__sub">v2.9.4 · <a href="…">GitHub</a></div>
@@ -150,6 +155,13 @@ A fixed full-screen scrim centers a white card that is 320 px wide, capped at
   </div>
 </div>
 ```
+
+In the settings panel the header badge is a real button (`.qp-head__badge--action`,
+`aria-label="What's new in Quick Pricer"`) rather than a decorative gear. It closes the
+panel and opens the changelog in its place, so the two dialogs never stack; Enter and
+Space are handled explicitly with `preventDefault` so activation stays single-shot. The
+footer **Clear cache** button is text-only, and the dead `.qp-btn svg` sizing rule was
+removed along with the unused `inventory_2` and `more_vert` icon map entries and assets.
 
 The current script adds `role="dialog"`, `aria-modal="true"`, Escape-to-close, and a
 Tab focus trap to the modal. Clicking the scrim also closes the dialog.
@@ -226,19 +238,29 @@ danger-tinted Clear cache button with a wider Save settings button.
 ### Route-aware circular bubble
 
 The current source creates one fixed 52 px circular `.qp-bubble` at the bottom center
-by default. Its Material 3 icon and action follow the current Torn route:
+by default. Only two Torn bazaar routes are supported; everything else hides the bubble
+via `.qp-bubble-hidden` and performs no action:
 
-- **Main:** the tap opens the local changelog modal.
-- **Add:** the tap runs Quick Fill for the loaded Add Items rows.
-- **Manage:** the tap runs Update All for the loaded Manage rows.
-- **Personalize:** the bubble is hidden and performs no action.
+- **Add (`bazaar.php#/add`):** the bubble shows the text label **Fill**
+  (`.qp-bubble-label`, `font: 900 13px/1`, white on the accent fill) and the tap runs
+  Quick Fill for the loaded Add Items rows. Its `aria-label` is `Quick Fill`.
+- **Manage (`bazaar.php#/manage`):** the bubble shows the Material `refresh` icon with
+  `aria-label` `Update all prices`, and the tap runs Update All.
+- **Base `bazaar.php#/`, Personalize, and any unknown route:** the bubble is hidden,
+  including while dragging. The drag branch deliberately never removes
+  `.qp-bubble-hidden`, so no transient state can reveal it on an unsupported route.
+- After an Add batch settles, the bubble switches to the Material `close` icon
+  (`aria-label` `Clear quantities`) in the same accent color — there is no pink
+  completion state and no `check_circle` icon. Tapping it clears the quantity of every
+  currently loaded row, leaves prices untouched, and returns the bubble to **Fill**.
+  The state is in-memory only, so a reload or a route change starts again at **Fill**.
 
 Dragging uses Pointer Events, clamps movement to the viewport, and persists the
 position in userscript storage. Arrow keys move it in 10 px steps. A long-press of
-350 ms opens settings; movement beyond 6 px suppresses both settings and tap actions.
-During a batch run the bubble displays `completed/total`; after an Add route completes,
-it turns pink (`#e8467c`) and shows the Material `check_circle` icon while every visible
-row has a positive price.
+350 ms opens settings from either supported route; movement beyond 6 px suppresses both
+settings and tap actions. Once a drag actually begins, the bubble renders the Material
+`settings` icon as a hint that the gesture moves it, and restores the route state on
+release or cancel. During a batch run the bubble displays `completed/total`.
 
 ### Toasts
 
@@ -277,7 +299,9 @@ comparison-card component.
 - Dialogs have `role="dialog"` and `aria-modal="true"`, close on Escape, and trap Tab
   focus.
 - Icon controls have accessible labels, and the API-key eye toggle supports click,
-  Enter, and Space.
+  Enter, and Space. The bubble carries a per-state `aria-label` (`Quick Fill`,
+  `Clear quantities`, `Update all prices`), and the settings info action supports
+  click, Enter, and Space.
 - Toasts use status/alert roles.
 - The circular bubble is keyboard-operable with arrow keys and activation keys.
 - The bubble and per-item controls provide touch targets of at least 34 px.

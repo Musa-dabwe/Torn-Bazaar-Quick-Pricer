@@ -3,9 +3,21 @@
 ## Overview
 - **Purpose**: Userscript for filling and updating Torn bazaar listings with market-based prices.
 - **Current Version**: 2.9.4
-- **Status**: v2.9.4 current; API v2 batching/manual verification completed; live desktop/PDA smoke pending
+- **Status**: v2.9.4 current (bubble follow-up documented); API v2 batching/manual
+  verification completed; live desktop/PDA smoke test pending as a release gate
 
 ## Development Timeline
+### 2026-09-26 — v2.9.4 bubble follow-up completed and documented
+Session: [session-2026-09-26-v2.9.4-bubble-followup.md](sessions/session-2026-09-26-v2.9.4-bubble-followup.md)
+Brief: Restricted the bubble to the Add and Manage routes (the base `bazaar.php#/` route
+and Personalize hide it), replaced the Add inventory icon with a text **Fill** state that
+becomes a `close` clear-all action after a batch, gated the 2.9.4 changelog to a
+once-per-version automatic dialog on the first Add visit, added the settings-header info
+action that reopens it, added the settings-icon drag hint, removed the unused
+`inventory_2`/`more_vert` icons, and synchronized README, CHANGELOG, theme reference, and
+build records. No pricing, quantity-parsing, API v2 batching, or v1 fallback behavior
+changed; the live desktop/PDA smoke test is still a pending release gate.
+
 ### 2026-09-25 — v2.9.4 Material 3 bubble release prepared
 Session: [session-2026-09-25-v2.9.4-material3-bubble.md](sessions/session-2026-09-25-v2.9.4-material3-bubble.md)
 Brief: Restored the route-aware circular bubble and long-press gestures, centralized
@@ -40,6 +52,16 @@ setting, and aligned package metadata to v2.9.3.
   v2 response also confirmed the documented field shape for item IDs 206 and 207.
 
 ### Medium
+- The v2.9.4 bubble originally opened the changelog from the base `bazaar.php#/` route,
+  which showed UI where no bubble is rendered and marked the version seen, so the user
+  would never see the notes on the first real Add visit. Fixed by gating the changelog on
+  the Add route inside `maybeShowChangelog()`.
+- The drag-hint render branch removed `qp-bubble-hidden`, which could reveal the bubble
+  on an unsupported route mid-drag. Fixed by checking the route before the drag branch.
+- The post-fill `clear` state survived a hash change, offering to clear quantities the
+  user may already have cleared. Fixed by resetting the bubble mode on `hashchange`.
+- Clearing quantities could blank a checkbox input that the quantity-checkbox selector
+  had missed, corrupting its checked state. Fixed by excluding `input[type=checkbox]`.
 - Documentation and project metadata claimed v2.9.5 and circular-bubble behavior while
   the source was v2.9.3 with a pill chip. Fixed by synchronizing documentation and
   package metadata with the source.
@@ -49,25 +71,32 @@ setting, and aligned package metadata to v2.9.3.
   whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit/integration testing: Vitest + jsdom, 138 tests.
+- Unit/integration testing: Vitest + jsdom, 168 tests (all passing).
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
 - Manual testing: API v2 batching/manual verification passed: the user installed the
   local `test.txt` export and confirmed the real userscript fills rows in batches of 10;
   a direct API check also confirmed the v2 field shape. The final live desktop/PDA smoke
-  test remains pending and is a release gate.
+  test remains pending and is a release gate. The v2.9.4 bubble follow-up
+  (route restriction, Fill/clear states, changelog gate, settings info action) was
+  verified by unit tests only; the live desktop/PDA smoke test for the follow-up is
+  still pending and blocks release.
 
 ## AI Models & Their Contributions
 ### Architecture & Complex Logic
 - **Space Bunny Free**: Designed and reviewed the API v2 batching architecture, queue
   integration, schema fallback, and callback isolation under subagent-driven development.
+- **Space Bunny Free**: Designed the v2.9.4 bubble follow-up (unsupported-route
+  decision, two-state Add bubble, once-per-version changelog gate) and reviewed the
+  implementation.
 
 ### Code Generation & Refactoring
 - **Space Bunny Free**: Implemented the request queue changes, tests, documentation, and
   final review fixes. Task 3 aligned the userscript and package metadata to v2.9.4.
 
 ### Specific Implementations
-- None.
+- **Space Bunny Free**: Implemented the v2.9.4 bubble follow-up and its regression tests,
+  then updated README, CHANGELOG, the theme reference, research record, and session log.
 
 ## Build Outputs
 No build artifact was produced. Documentation is maintained in the repository.

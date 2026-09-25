@@ -27,11 +27,23 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   value isn't the base item's market price. You can still price them manually after
   a confirmation.
 - **Route-aware circular bubble** — a 52 px floating bubble works on desktop and
-  Torn PDA. Tap it for the route action, drag it to reposition it (the position is
-  remembered and clamped), or long-press for 350 ms to open settings. Main shows
-  release notes, Add runs Quick Fill, Manage runs Update All, and Personalize hides
-  it. The Add bubble turns pink with a completion check when every visible row is
-  filled. Icons are Material Design assets reviewed from Google's official Material
+  Torn PDA. Only two Torn bazaar routes are supported: **Add items** and
+  **Manage bazaar**. On the base `bazaar.php#/` route, on **Personalize**, and on any
+  other route the bubble is hidden and does nothing at all. Tap it for the route
+  action, drag it to reposition it (the position is remembered and clamped), or
+  long-press for 350 ms to open settings from either supported route.
+  - **Add items:** the bubble reads **Fill**; tapping it runs Quick Fill. Once the
+    batch settles the bubble switches to a `close` icon, and tapping that clears the
+    quantity of every currently loaded row (prices are left alone) and returns the
+    bubble to **Fill**. Only loaded rows are touched — Torn lazy-loads the rest, and
+    the script never scrolls for you, so scroll down and run again to cover more.
+    A route change always resets the bubble to **Fill**.
+  - **Manage bazaar:** the bubble shows a `refresh` icon; tapping it runs Update All.
+  - The release notes for 2.9.4 open automatically on your first **Add items** visit
+    after the update, and once you close them (close button, scrim, or Escape) they
+    are not shown again for that version. You can reopen them any time from the info
+    button in the settings header.
+  - Icons are Material Design assets reviewed from Google's official Material
   source and acquired from the documented Google Fonts CDN URLs; see
   [`docs/assets/material-icons/README.md`](docs/assets/material-icons/README.md)
   for provenance, legacy-serialization details, and Apache License 2.0 attribution.
@@ -74,7 +86,11 @@ to that service.
 
 ## Settings
 
-Long-press the floating bubble for 350 ms.
+Long-press the floating bubble for 350 ms on the **Add items** or **Manage bazaar**
+route (the bubble is hidden elsewhere).
+
+The `info` button in the settings header opens the 2.9.4 release notes, which is
+also how you reopen them after the first automatic display.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -109,6 +125,9 @@ Maintenance notes:
   find/replaces every occurrence with the real key). Never compare against the
   token; validate keys by format.
 - Set the `debug` flag in userscript storage to enable verbose per-item logging.
+- `getBubbleRoute()` deliberately maps every route except Add and Manage to
+  `unsupported`; new routes are not added by default because the bubble hides
+  itself there and the changelog gate only fires on Add.
 
 
 
