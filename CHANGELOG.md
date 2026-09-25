@@ -1,22 +1,9 @@
 # Changelog
 
-Releases should be tagged (`v2.9.5`, …) and published as GitHub Releases when merged
-to `main`, so Greasy Fork users can diff versions and roll back easily.
-
-## 2.9.5 — 2026-08-28
-
-Floating chip → circular bubble redesign (PDA-focused), plus first GitHub Release.
-
-- The pill-shaped **floating chip** is now a compact **circular bubble** that matches
-  your phone's look. Icon and colour adapt to the sub-page hash: an info icon on the
-  main bazaar view, a fill-state box on Add Items, and a refresh icon on Manage.
-- On Add Items the bubble turns **pink once every item in the category is filled**, so
-  you can see at a glance when a category is done.
-- **Tap** the bubble to open the changelog (main view), quick-fill (Add Items), or
-  update-all (Manage); **long-press** to open settings.
-- The bubble is fully **draggable** (Pointer Events) and remembers its position,
-  clamped to the viewport, and it hides on the Personalize page.
-- New **changelog modal** (tap the info bubble) so release notes travel with the script.
+The userscript metadata in `torn-bazaar-quick-pricer.user.js` currently declares
+**version 2.9.3**. The project package metadata is kept at the same version. Releases
+should be tagged (`v2.9.3`, …) and published as GitHub Releases when merged to `main`,
+so users can diff versions and roll back easily.
 
 ## 2.9.3 — 2026-07-12
 
@@ -26,135 +13,117 @@ pricing at market value instead).
 
 - **New "Undercut market" toggle** in settings chooses the direction of the percentage:
   on (default) prices **N% below** market — a discount, exactly as before; off prices
-  **N% above** market — a markup. You now enter a positive percentage and flip the toggle
-  instead of typing a negative discount that got clamped away.
-- The number-cell label flips between **DISCOUNT** and **MARKUP** as you toggle, so the
-  active direction is always visible.
-- The `0–99.9%` ceiling still applies, now in both directions — a markup tops out at
-  +99.9% (≈2× market value). Below-market prices are still floored at the NPC sell price;
-  that floor can't affect a markup.
+  **N% above** market — a markup. The user enters a positive percentage and flips the
+  toggle instead of typing a negative discount that got clamped away.
+- The number-cell label flips between **DISCOUNT** and **MARKUP** as the toggle changes,
+  so the active direction is always visible.
+- The `0–99.9%` ceiling applies in both directions — a markup tops out at +99.9%
+  (approximately 2× market value). Below-market prices are floored at the NPC sell
+  price; that floor cannot affect a markup.
 
 ## 2.9.2 — 2026-07-12
 
-UI-only release — no functional changes.
+UI release — the current source contains the pastel modal and component styling.
 
-- **New "Pastel" UI** across the whole script: settings panel, API key prompt, confirm
-  dialogs, toasts, floating chip and per-item buttons now use the shared pastel design
-  system (soft lavender palette, Nunito, rounded cards, springy pop-in) also used by
-  Torn City Loot Finder, so all our scripts share one look.
-- Settings dialog reorganized to match the design: compact number-cell grid for
-  Discount / Alert at / Cache, toggle rows with descriptions, header ✕ close button,
-  version + GitHub link in the header.
-- API key prompt gains a "Where do I find my key?" link to Torn's API preferences page.
-- Toasts are now white pills with a status icon; confirm dialogs use the pastel modal
-  with a warning/RW badge.
-- Design tokens and component reference documented in `docs/pastel-theme.md`.
+- **Pastel UI** across the settings panel, API key prompt, confirmation dialogs,
+  toasts, floating pill chip, and per-item buttons. The current source loads the
+  Nunito display font from Google Fonts and falls back to `system-ui` if it is blocked.
+- Settings dialog organized around a compact number-cell grid for Discount / Alert at /
+  Cache, toggle rows with descriptions, a header close button, and version + GitHub
+  link in the header.
+- API key prompt includes a link to Torn's API preferences page.
+- Toasts are white pills with a status icon; confirmation dialogs use the pastel modal
+  with warning or RW badges.
+- Design tokens and component reference are documented in `docs/pastel-theme.md`.
 
 ## 2.9.1 — 2026-07-08
 
-Fixes driven by tester feedback (200-item bazaar stress test).
+Fixes driven by tester feedback from a 200-item bazaar stress test.
 
-- **Batch runs no longer auto-scroll the page.** Torn lazy-loads bazaar rows (~48 at a
-  time) as you scroll, so "Update All" / "Quick Fill" only see the rows already rendered.
-  A previous build auto-scrolled to force the rest into the DOM, but programmatically
-  moving the page simulates interaction the user never performed, which Torn's script
-  rules disallow — so this was removed. Batch runs now process the currently loaded rows
-  and, when more rows may be waiting below the fold, the summary toast tells you to scroll
-  down and run again.
+- **Batch runs no longer auto-scroll the page.** Torn lazy-loads bazaar rows, so
+  Quick Fill / Update All process only the rows already rendered. When the last loaded
+  row is below the fold, the summary tells the user to scroll down and run again.
 - **$1 listings are skipped by Update All.** Pricing an item at $1 is Torn's convention
-  for intentional giveaway/transfer listings; batch runs no longer "correct" them to
-  market value. New "Skip $1 Items" toggle in settings (on by default); the summary
-  toast reports how many were skipped. Per-item buttons still update them on explicit click.
-- **Price-change confirmations now name the item**, so during a batch run you know
-  *which* item moved more than the threshold.
-- **The alert threshold is user-adjustable** ("Alert at %", default 20, 0–1000) instead
-  of hard-coded at 20%.
-- **API key prompts state the required key level**: a Public-scope key is enough, with
-  a warning not to paste Full Access keys into third-party scripts (previously only
-  documented in the README).
+  for intentional giveaway/transfer listings. The Skip $1 Items setting is on by
+  default; per-item buttons still update them on explicit click.
+- **Price-change confirmations name the item** and show the current and proposed prices.
+- The alert threshold is user-adjustable (Alert at %, default 20, range 0–1000).
+- API key prompts state that a Public-scope key is enough and warn against using a
+  Full Access key in third-party scripts.
 
 ## 2.9 — 2026-07-06
 
-Implementation of the full v2.8.9 code audit (see `IMPROVEMENT-TASKS.md`).
+Implementation of the v2.8.9 code audit.
 
 ### Reliability
-- **Request queue hardened**: 15-second timeout with `ontimeout`/`onabort` handling —
-  a hung API request can no longer stall pricing until reload.
-- **Torn API error handling**: rate-limit errors (code 5) back off 5 s and retry up to
-  twice; fatal errors (2 incorrect key, 8 IP block, 9 API disabled) stop the run and
-  notify once instead of alert-spamming per item.
-- **Rate-limit compliance**: requests spaced 600 ms apart (≤100 req/min) instead of 300 ms.
-- **Request dedupe**: duplicate fetches for the same item piggyback on the in-flight request.
-- **Price cache**: held in memory, stale entries pruned at startup, persisted with a
-  single debounced write instead of one full re-serialization per item.
-- **Bootstrap**: single MutationObserver with a 20 s hard timeout (was observer +
-  100 ms poll + fallback observer that could leak forever).
-- **Re-injection cleanup**: stale chip/toasts/overlays/stylesheet from a previous
-  instance are swept at startup (Torn PDA re-injection, SPA navigation).
+- **Request queue hardened**: 15-second timeout with timeout, error, and abort handling.
+- **Torn API error handling**: rate-limit errors (code 5) back off 5 seconds and retry
+  up to twice; fatal errors (2 incorrect key, 8 IP block, 9 API disabled) stop the run
+  and notify once.
+- **Rate-limit compliance**: requests are spaced 600 ms apart (≤100 requests/min).
+- **Request dedupe**: duplicate fetches for the same item share one request.
+- **Price cache**: held in memory, stale entries pruned at startup, and persisted with
+  a debounced write.
+- **Bootstrap**: a single MutationObserver with a hard 20-second root-search timeout.
+- **Re-injection cleanup**: stale chip, toasts, overlays, and stylesheet are removed at
+  startup.
 
-### Correctness & input safety
-- API key validated with one shared rule (16 alphanumeric) at all three entry points;
-  key set via DOM property instead of interpolated into HTML.
-- Discount clamped to 0–99.9% — no more negative prices from a typo'd discount.
-- "Update All" now awaits each item and reports real updated/skipped/failed counts
-  (previously it counted attempts on a fixed 350 ms timer).
-- Quantity parsing anchored to the end of the item title so names containing
-  "x<digits>" can't be misread.
+### Correctness and input safety
+- API key validation uses one shared 16-alphanumeric-character rule at every entry
+  point; stored keys are assigned through the DOM rather than interpolated into HTML.
+- Discount is clamped to 0–99.9%.
+- Update All awaits each item and reports actual updated, declined, and failed counts.
+- Quantity parsing is anchored to the end of the item title so names containing
+  `x<digits>` are not misread.
 
 ### UX
-- All blocking `alert()`/`confirm()` dialogs replaced with in-page toasts and a
-  styled confirm dialog.
-- Batch runs show live progress ("Updating 12/50") and an accurate summary toast.
-- Failed per-item fetches flash the button red with a retry hint instead of
-  silently doing nothing.
-- The script now fully initializes without an API key: dismissing the key prompt no
-  longer leaves it dead until reload, and saving the first key no longer reloads the page.
-- Price-cache lifetime exposed as a "Cache (min)" setting (1–120 minutes).
-- Floating chip position is clamped to the viewport when restored (no more off-screen
-  chip after switching from a large monitor to a phone).
-- Accessibility: aria-labels on icon buttons, `role="dialog"`/`aria-modal`, Escape
-  closes dialogs, Tab focus trap, keyboard chip repositioning (arrow keys).
+- Blocking `alert()`/`confirm()` dialogs were replaced with toasts and a styled confirm
+  dialog.
+- Batch runs show live progress and an accurate summary.
+- Failed per-item fetches indicate a retryable failure on the item button.
+- The script initializes without an API key and prompts when the user tries to act.
+- Price-cache lifetime is exposed as a Cache (min) setting (1–120 minutes).
+- The floating chip position is clamped to the viewport when restored.
+- Accessibility: labels on icon buttons, dialog roles, Escape-to-close, Tab focus trap,
+  and keyboard chip repositioning with arrow keys.
 
-### Security & privacy
-- Removed both Google Fonts `@import`s (one was mid-stylesheet and silently ignored);
-  UI now uses system font stacks — no third-party requests from the page.
-- Added `@noframes` so the script never runs in iframes.
-- README documents that a Public-scope API key is sufficient.
+### Security and privacy
+- The current source uses Torn API v1 with the key in the query string; migration to API
+  v2 with an `Authorization` header remains deferred.
+- The current source injects a Nunito stylesheet from `fonts.googleapis.com`. The
+  script does not send the API key to Google, but the font request is still a
+  third-party network request.
 
-### Code quality & tooling
-- Centralized all fragile Torn selectors in a `SELECTORS` object with warn-once
+### Code quality and tooling
+- Fragile Torn selectors are centralized in a `SELECTORS` object with warn-once
   diagnostics.
-- Removed dead code (`saveConfig`, `isMobile`, `profilePhoto`, `lastPriceUpdate`,
-  `getActiveTab`, `RW_RARITY_KEYWORDS`); deduplicated the RW badge/confirm and
-  eye-toggle logic; single `VERSION` source; `debug` flag for verbose logging;
-  stylesheet tidied; JSDoc added.
-- Repo: renamed the script to the stable `torn-bazaar-quick-pricer.user.js`, deleted
-  ~1 MB of unused vendored libraries, added ESLint (flat config), a 30-test
-  Vitest + jsdom suite, and a GitHub Actions CI workflow.
+- Duplicate RW badge/confirm and eye-toggle logic was consolidated, with JSDoc and a
+  `debug` storage flag for verbose logging.
+- The repository includes ESLint, a Vitest + jsdom suite, and a GitHub Actions CI
+  workflow.
 
 ### Deferred
-- Migration to Torn API v2 with the key in an `Authorization` header (audit task 2.1)
-  is deferred: it can't be safely verified without live API access. The script still
-  uses the v1 endpoint with the key in the query string.
+- Migration to Torn API v2 with the key in an `Authorization` header is deferred: it
+  cannot be safely verified without live API access. The script still uses the v1
+  endpoint with the key in the query string.
 
 ## 2.8.9
 
-- **PDA API Key Fix**: Fixed the `###PDA-APIKEY###` injection check so the script no
-  longer re-prompts for a key that was already injected on script update. Key validity
-  is now checked by format instead of comparing against the placeholder text, and the
-  injected key is persisted the first time it's seen.
-- **Floating Drag Chip**: Replaced the embedded "Quick Fill" / "Update All" /
-  "Settings" buttons — which could get hidden entirely in desktop-top mode — with a
-  single floating, draggable chip that lives independently of Torn's page layout. The
-  chip automatically switches between Quick Fill and Update All depending on which
-  bazaar page you're on, and remembers its dragged position.
+- **PDA API Key Fix**: the PDA placeholder is validated by key format rather than
+  string equality, and an injected key is persisted for later runs.
+- **Floating Drag Chip**: the embedded Quick Fill / Update All / Settings controls were
+  replaced by one floating, draggable chip that switches action by bazaar section and
+  remembers its position.
 
 ## 2.8.8
 
-- **UI Rebuild**: Replaced settings panel and API prompt with a new brutalist design
-  using the Syne font.
-- **PDA API Key Support**: Implemented `###PDA-APIKEY###` injection logic for Torn PDA
-  compatibility.
-- **RW Detection Refinement**: Optimized RW weapon detection to use only glow-class
-  and bonus-icon methods.
-- **Settings Toggle**: Added "Skip RW Weapons" toggle to settings panel.
+- **UI Rebuild**: settings panel and API prompt received a new design treatment.
+- **PDA API Key Support**: `###PDA-APIKEY###` injection support was added.
+- **RW Detection Refinement**: ranked-war detection was based on glow classes and
+  bonus icons.
+- **Settings Toggle**: Skip RW Weapons was added to settings.
+
+## 2.8.7 and earlier
+
+Earlier release notes are not included in this file. For historical behavior, consult
+the corresponding Git tag or commit.

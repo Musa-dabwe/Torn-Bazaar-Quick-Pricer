@@ -4,7 +4,7 @@ A userscript for [Torn](https://www.torn.com) that fills your bazaar listings wi
 market-based prices in one click — per item or for the whole page — with configurable
 discounting, NPC-floor protection, and ranked-war weapon detection.
 
-**Current version: 2.9.5** — see the [CHANGELOG](CHANGELOG.md) for what's new.
+**Current version: 2.9.3** — see the [CHANGELOG](CHANGELOG.md) for the release history.
 
 ## Features
 
@@ -22,13 +22,14 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   undo on the add page.
 - **NPC floor enforcement** — never prices an item below its NPC sell value
   (can be disabled in settings).
-- **RW weapon detection** — ranked-war weapons (glow + bonus icon detection) are
-  flagged with a blinking badge and skipped by batch runs, since their real value
-  isn't the base item's market price. You can still price them manually after a
-  confirmation.
-- **Floating chip** — a draggable control chip that works on any Torn layout
-  (desktop or mobile) and remembers where you put it. It switches between
-  Quick Fill and Update All automatically based on the page you're on.
+- **RW weapon detection** — rows containing a known ranked-war bonus icon are
+  flagged with a blinking rarity dot and skipped by batch runs, since their real
+  value isn't the base item's market price. You can still price them manually after
+  a confirmation.
+- **Floating chip** — a pill-shaped control chip that works on any Torn layout
+  (desktop or mobile). Its grip is draggable, its position is remembered and
+  clamped to the viewport, and the action button switches between Quick Fill and
+  Update All based on the bazaar section currently rendered.
 - **Rate-limit aware** — API requests are queued, spaced to stay inside Torn's
   100 requests/minute limit, deduplicated, cached, and retried with backoff when
   rate-limited.
@@ -58,7 +59,9 @@ To create one: Torn → **Settings → API Keys → Create Key → Public**.
 
 You'll be prompted for the key on first run; you can change it later from the
 settings panel (gear icon on the floating chip). The key is stored locally in your
-userscript manager's storage and sent only to `api.torn.com`.
+userscript manager's storage and is sent only to `api.torn.com`. The current script
+also loads the Nunito display font from Google Fonts; it does not send the API key
+to that service.
 
 ## Settings
 
@@ -67,12 +70,13 @@ Open with the gear icon on the floating chip.
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | API key | — | Your 16-character Torn API key (Public scope is enough). |
-| Discount % | 0 | Percentage knocked off the market value (0–99.9). |
+| Discount / markup % | 0 | Percentage below market when **Undercut market** is on, or above it when off (0–99.9). |
 | Alert at % | 20 | Ask before applying a price change larger than this (0 asks on every change). |
 | Cache (min) | 5 | How long fetched prices are reused before re-querying the API (1–120 minutes). |
 | NPC floor enforcement | on | Never price below the item's NPC sell value. |
-| Skip RW weapons | on | Batch runs skip detected ranked-war weapons. |
+| Skip RW weapons | on | Quick Fill and Update All skip detected ranked-war weapons; per-item buttons still work after confirmation. |
 | Skip $1 items | on | Update All leaves $1 (giveaway) listings alone; per-item buttons still work on them. |
+| Undercut market | on | On prices below market; off prices above market. The percentage is always entered as a positive value. |
 | Clear cache | — | Drops all cached prices immediately. |
 
 ## Development
@@ -97,8 +101,7 @@ Maintenance notes:
   token; validate keys by format.
 - Set the `debug` flag in userscript storage to enable verbose per-item logging.
 
-An audit-driven task list lives in [IMPROVEMENT-TASKS.md](IMPROVEMENT-TASKS.md);
-almost all of it shipped in v2.9.
+
 
 ## License
 
