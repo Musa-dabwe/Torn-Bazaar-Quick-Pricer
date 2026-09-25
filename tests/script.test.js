@@ -9,9 +9,9 @@ const testDir = dirname(fileURLToPath(import.meta.url));
 describe('Material icon map', () => {
     const { QP } = loadScript();
     const requiredIcons = [
-        'info', 'inventory_2', 'refresh', 'settings', 'key', 'visibility',
+        'info', 'refresh', 'settings', 'key', 'visibility',
         'visibility_off', 'add', 'undo', 'check_circle', 'error', 'warning',
-        'sports_martial_arts', 'open_in_new', 'close', 'more_vert'
+        'sports_martial_arts', 'open_in_new', 'close'
     ];
 
     it.each(requiredIcons)('maps %s to a normalized, parseable SVG with path data', name => {
@@ -66,11 +66,27 @@ describe('Material icon map', () => {
 
     it('wires mapped icons into status, confirmation, close, overflow, and undo UI paths', () => {
         const script = readFileSync(resolve(testDir, '../torn-bazaar-quick-pricer.user.js'), 'utf8');
-        ['check_circle', 'error', 'info', 'warning', 'sports_martial_arts', 'inventory_2', 'undo', 'open_in_new', 'close']
+        ['check_circle', 'error', 'info', 'warning', 'sports_martial_arts', 'undo', 'open_in_new', 'close']
             .forEach(name => {
                 const uses = script.match(new RegExp(`getMaterialIcon\\('${name}'\\)`, 'g')) || [];
                 expect(uses.length).toBeGreaterThanOrEqual(1);
             });
+    });
+
+    // inventory_2 lost its only consumer when Clear cache became text-only, and
+    // more_vert was never used by the final bubble design. Neither should linger
+    // in the map, in the script, or in the provenance assets.
+    it.each(['inventory_2', 'more_vert'])('drops the unused %s icon, its usage, and its source asset', name => {
+        expect(QP.getMaterialIcon(name)).toBe(null);
+        expect(Object.keys(QP.MATERIAL_ICONS)).not.toContain(name);
+
+        const script = readFileSync(resolve(testDir, '../torn-bazaar-quick-pricer.user.js'), 'utf8');
+        expect(script).not.toContain(`getMaterialIcon('${name}')`);
+
+        const sourcePath = resolve(testDir, `../docs/assets/material-icons/${name}.svg`);
+        expect(() => readFileSync(sourcePath)).toThrow();
+        expect(readFileSync(resolve(testDir, '../docs/assets/material-icons/README.md'), 'utf8'))
+            .not.toContain(`${name}.svg`);
     });
 });
 
@@ -1652,5 +1668,94 @@ describe('Fill and clear bubble actions', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+});
+
+describe('v2.9.4 changelog order and settings info action', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        window.location.hash = '';
+        vi.restoreAllMocks();
+    });
+
+    it('lists the user-visible v2.9.4 changes first, in priority order', () => {
+        const { QP } = loadScript();
+        QP.showChangelog();
+        const items = [...document.querySelectorAll('.qp-changelog__list li')].map(li => li.textContent);
+
+        const order = [
+            /clears all listed quantities/i,
+            /Long-press the bubble to open Settings/i,
+            /route-aware actions/i,
+            /circular Material 3 bubble/i,
+            /API v2 batches/i,
+            /PDA initialization/i,
+            /v1 fallback and rate-limit safeguards/i
+        ];
+        expect(items).toHaveLength(order.length);
+        order.forEach((note, index) => expect(items[index]).toMatch(note));
+    });
+
+    it('exposes the settings header as a labelled button that is not a decorative gear', () => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        const info = document.querySelector('#qpSettingsInfo');
+
+        expect(info.tagName).toBe('BUTTON');
+        expect(info.type).toBe('button');
+        expect(info.getAttribute('aria-label')).toMatch(/what'?s new/i);
+        expect(info.querySelector('svg')).toBeTruthy();
+        expect(info.querySelector('svg').innerHTML).toBe(
+            (() => {
+                const holder = document.createElement('div');
+                holder.innerHTML = QP.getMaterialIcon('info');
+                return holder.querySelector('svg').innerHTML;
+            })()
+        );
+        document.querySelector('.qp-overlay').remove();
+    });
+
+    it.each([
+        ['click', target => target.click()],
+        ['Enter', target => target.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))],
+        ['Space', target => target.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))]
+    ])('closes settings and opens the changelog on %s', (_label, activate) => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        const settingsOverlay = document.querySelector('.qp-overlay');
+        activate(settingsOverlay.querySelector('#qpSettingsInfo'));
+
+        expect(document.body.contains(settingsOverlay)).toBe(false);
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+        expect(document.querySelector('.qp-changelog__list li')?.textContent).toMatch(/clears all listed quantities/i);
+    });
+
+    it('keeps the Clear cache button text-only and reports its cleared state as text', () => {
+        vi.useFakeTimers();
+        try {
+            const { QP } = loadScript();
+            QP.showSettingsPanel();
+            const button = document.querySelector('#qpClearCache');
+
+            expect(button.querySelector('svg')).toBeNull();
+            expect(button.textContent.trim()).toBe('Clear cache');
+
+            button.click();
+            expect(button.textContent).toContain('Cleared');
+            vi.advanceTimersByTime(1500);
+            expect(button.textContent.trim()).toBe('Clear cache');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not focus the API key input when the info action opens the changelog', () => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        document.querySelector('#qpSettingsInfo').click();
+
+        expect(document.activeElement).not.toBe(document.querySelector('#qpApiKey'));
+        expect(document.activeElement).toBe(document.querySelector('#qpChangelogClose'));
     });
 });

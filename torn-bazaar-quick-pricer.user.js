@@ -31,10 +31,14 @@
     const CHANGELOG = Object.freeze([{
         version: '2.9.4',
         date: '2026-09-25',
+        // Ordered user-visible-first: the two behavior changes and the route
+        // support lead, then the cosmetic bubble, then the plumbing notes.
         notes: Object.freeze([
-            'Fresh cached prices stay local; API v2 batches now price up to ten uncached items per request.',
+            'The Add bubble fills prices, then switches to a close icon whose tap clears all listed quantities.',
+            'Long-press the bubble to open Settings from any supported view.',
+            'Route-aware actions change the icon and action across the Add and Manage views, and the changelog now opens on the Add route.',
             'The pill is now a circular Material 3 bubble that fits mobile and desktop layouts.',
-            'Route-aware actions change the icon and action across Main, Add, Manage, and Personalize.',
+            'Fresh cached prices stay local; API v2 batches now price up to ten uncached items per request.',
             'PDA initialization remains compatible with delayed page and hash-route loading.',
             'v1 fallback and rate-limit safeguards keep request spacing and recovery behavior intact.'
         ])
@@ -409,6 +413,13 @@
         }
         .qp-head__badge svg { width: 22px; height: 22px; display: block; }
         .qp-head__badge--warn { color: var(--qp-warn); }
+        /* The settings header badge is a real control: it opens the changelog. */
+        .qp-head__badge--action {
+            border: 0; padding: 0; cursor: pointer; font: inherit;
+            -webkit-appearance: none; appearance: none;
+        }
+        .qp-head__badge--action:hover { background: var(--qp-accent); color: #fff; }
+        .qp-head__badge--action:focus-visible { outline: 2px solid var(--qp-accent); outline-offset: 2px; }
         .qp-head__badge--rw { color: var(--qp-rw); }
         .qp-head__badge--warn { background: var(--qp-warn-bg); font-size: 16px; }
         .qp-head__badge--rw   { background: var(--qp-rw-bg);   font-size: 16px; position: relative; }
@@ -608,7 +619,6 @@
     // Material Design Icons are embedded to keep the userscript self-contained.
     const MATERIAL_ICONS = Object.freeze({
         info: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>`,
-        inventory_2: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g><rect fill="none" height="24" width="24"/></g><g><path d="M20,2H4C3,2,2,2.9,2,4v3.01C2,7.73,2.43,8.35,3,8.7V20c0,1.1,1.1,2,2,2h14c0.9,0,2-0.9,2-2V8.7c0.57-0.35,1-0.97,1-1.69V4 C22,2.9,21,2,20,2z M15,14H9v-2h6V14z M20,7H4V4h16V7z"/></g></svg>`,
         refresh: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/><path d="M0 0h24v24H0z" fill="none"/></svg>`,
         settings: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>`,
         key: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g><rect fill="none" height="24" width="24"/></g><g><path d="M21,10h-8.35C11.83,7.67,9.61,6,7,6c-3.31,0-6,2.69-6,6s2.69,6,6,6c2.61,0,4.83-1.67,5.65-4H13l2,2l2-2l2,2l4-4.04L21,10z M7,15c-1.65,0-3-1.35-3-3c0-1.65,1.35-3,3-3s3,1.35,3,3C10,13.65,8.65,15,7,15z"/></g></svg>`,
@@ -622,7 +632,6 @@
         sports_martial_arts: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g><rect fill="none" height="24" width="24"/></g><g><g><polygon points="19.8,2 11.6,8.7 10.39,7.66 13.99,5.58 9.41,1 8,2.41 10.74,5.15 5,8.46 3.81,12.75 6.27,17 8,16 5.97,12.48 6.32,11.18 9.5,13 10,22 12,22 12.5,12 21,3.4"/><circle cx="5" cy="5" r="2"/></g></g></svg>`,
         open_in_new: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>`,
         close: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/><path d="M0 0h24v24H0z" fill="none"/></svg>`,
-        more_vert: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>`,
     });
 
     function getMaterialIcon(name) {
@@ -880,7 +889,7 @@
         overlay.innerHTML = `
             <div class="qp-modal">
                 <div class="qp-head">
-                    <div class="qp-head__badge">${getMaterialIcon('settings')}</div>
+                    <button type="button" class="qp-head__badge qp-head__badge--action" id="qpSettingsInfo" aria-label="What's new in Quick Pricer">${getMaterialIcon('info')}</button>
                     <div>
                         <div class="qp-head__title">Quick Pricer settings</div>
                         <div class="qp-head__sub">v${VERSION} · <a class="qp-external-link" href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" rel="noopener">GitHub ${getMaterialIcon('open_in_new')}</a></div>
@@ -953,7 +962,7 @@
                         </div>
                     </div>
                     <div class="qp-btn-row">
-                        <button class="qp-btn qp-btn--danger" id="qpClearCache">${getMaterialIcon('inventory_2')} Clear cache</button>
+                        <button class="qp-btn qp-btn--danger" id="qpClearCache">Clear cache</button>
                         <button class="qp-btn qp-btn--primary" id="qpSave" style="flex:1.4;font-size:12.5px">Save settings</button>
                     </div>
                 </div>
@@ -1004,6 +1013,22 @@
         };
 
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
+        // The header info action replaces the settings panel with the changelog so
+        // the two dialogs never stack. Enter/Space are handled explicitly (with
+        // preventDefault) so activation stays single-shot in every browser.
+        const openChangelogFromSettings = () => {
+            overlay.remove();
+            showChangelog();
+        };
+        const infoButton = overlay.querySelector('#qpSettingsInfo');
+        infoButton.addEventListener('click', openChangelogFromSettings);
+        infoButton.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                openChangelogFromSettings();
+            }
+        });
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
     }

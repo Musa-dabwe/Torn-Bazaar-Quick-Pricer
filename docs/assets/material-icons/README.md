@@ -26,9 +26,7 @@ content are reviewed against the official Google Material project.
 - `close.svg`: https://fonts.gstatic.com/s/i/materialicons/close/v1/24px.svg
 - `error.svg`: https://fonts.gstatic.com/s/i/materialicons/error/v1/24px.svg
 - `info.svg`: https://fonts.gstatic.com/s/i/materialicons/info/v1/24px.svg
-- `inventory_2.svg`: https://fonts.gstatic.com/s/i/materialicons/inventory_2/v1/24px.svg
 - `key.svg`: https://fonts.gstatic.com/s/i/materialicons/key/v1/24px.svg
-- `more_vert.svg`: https://fonts.gstatic.com/s/i/materialicons/more_vert/v1/24px.svg
 - `open_in_new.svg`: https://fonts.gstatic.com/s/i/materialicons/open_in_new/v1/24px.svg
 - `refresh.svg`: https://fonts.gstatic.com/s/i/materialicons/refresh/v1/24px.svg
 - `settings.svg`: https://fonts.gstatic.com/s/i/materialicons/settings/v1/24px.svg
