@@ -43,8 +43,11 @@ fallback, while keeping the userscript at version 2.9.3.
 - **Unit/Integration Tests**: `npm test` — 67 tests passed.
 - **Lint**: `npm run lint` — passed.
 - **Diff Validation**: `git diff --check` — passed.
-- **Manual Live Test**: blocked; no Public API key or live userscript session was
-  available. The live response field-shape check remains required before release.
+- **Manual Live Test**: partial. A direct read-only v2 request for item IDs 206 and 207
+  returned an `items` array with numeric `market_price` and `null` `sell_price`. A later
+  integration request through the Node/jsdom harness returned API error code 2
+  (`Incorrect key`), so full callback/cache/row-fill verification remains blocked. The
+  key was not stored in the repository and should be deleted or rotated.
 
 ## AI Models Used & Their Role
 - **Space Bunny Free**: Implemented tasks, reviewed task diffs, and performed the final

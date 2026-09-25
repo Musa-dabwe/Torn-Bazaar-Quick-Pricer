@@ -29,7 +29,7 @@ setting, and aligned package metadata to v2.9.3.
 
 ## Bugs Discovered & Fixed
 ### Critical
-- Live Public-key verification is pending; no production response or row-fill behavior has been observed yet.
+- Full live userscript-path verification is pending. A direct v2 response confirmed the documented field shape for item IDs 206 and 207, but a later request with the temporary key returned API error code 2 (`Incorrect key`) before the normal queue/cache/row-fill path could be verified.
 
 ### Medium
 - Documentation and project metadata claimed v2.9.5 and circular-bubble behavior while
@@ -44,7 +44,7 @@ setting, and aligned package metadata to v2.9.3.
 - Unit/integration testing: Vitest + jsdom, 67 tests.
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
-- Manual testing: live Public-key v2 smoke test is pending; no API key was available in the development environment.
+- Manual testing: partial direct API v2 field-shape check passed for items 206 and 207; full userscript queue/cache/row-fill smoke test remains pending because the temporary key later returned API error code 2.
 
 ## AI Models & Their Contributions
 ### Architecture & Complex Logic
