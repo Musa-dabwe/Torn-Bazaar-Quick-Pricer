@@ -1703,6 +1703,7 @@
         applyBubblePosition();
 
         let longPressTimer = null;
+        let activePointerId = null;
         let dragging = false;
         let didLongPress = false;
         let startX = 0;
@@ -1710,8 +1711,19 @@
         let dragOffsetX = 0;
         let dragOffsetY = 0;
 
+        const clearBubbleGesture = () => {
+            if (longPressTimer !== null) clearTimeout(longPressTimer);
+            longPressTimer = null;
+            activePointerId = null;
+            dragging = false;
+            didLongPress = false;
+            bubbleEl.classList.remove('qp-bubble-dragging');
+        };
+
         bubbleEl.addEventListener('pointerdown', event => {
-            if (bubbleBusy) return;
+            if (bubbleBusy || activePointerId !== null) return;
+            clearBubbleGesture();
+            activePointerId = event.pointerId;
             dragging = false;
             didLongPress = false;
             startX = event.clientX;
@@ -1724,7 +1736,9 @@
             dragOffsetX = event.clientX - rect.left;
             dragOffsetY = event.clientY - rect.top;
             bubbleEl.setPointerCapture(event.pointerId);
+            const pointerId = event.pointerId;
             longPressTimer = setTimeout(() => {
+                if (activePointerId !== pointerId) return;
                 longPressTimer = null;
                 didLongPress = true;
                 onBubbleLongPress();
@@ -1732,7 +1746,7 @@
         });
 
         bubbleEl.addEventListener('pointermove', event => {
-            if (bubbleBusy) return;
+            if (bubbleBusy || activePointerId !== event.pointerId) return;
             const movedPastThreshold = Math.hypot(event.clientX - startX, event.clientY - startY) > BUBBLE_DRAG_THRESHOLD;
             if (longPressTimer !== null && movedPastThreshold) {
                 clearTimeout(longPressTimer);
@@ -1746,25 +1760,21 @@
             bubbleEl.style.top = `${y}px`;
         });
 
-        const endBubbleGesture = () => {
-            if (bubbleBusy) return;
-            if (longPressTimer !== null) clearTimeout(longPressTimer);
-            longPressTimer = null;
-            bubbleEl.classList.remove('qp-bubble-dragging');
-            if (dragging) {
-                dragging = false;
-                const rect = bubbleEl.getBoundingClientRect();
+        const endBubbleGesture = event => {
+            if (bubbleBusy || activePointerId !== event.pointerId) return;
+            const wasDragging = dragging;
+            const wasLongPress = didLongPress;
+            const rect = bubbleEl.getBoundingClientRect();
+            clearBubbleGesture();
+            if (wasDragging) {
                 GM_setValue('chipPosition', { x: rect.left, y: rect.top });
                 return;
             }
-            if (!didLongPress) onBubbleTap();
+            if (!wasLongPress) onBubbleTap();
         };
         bubbleEl.addEventListener('pointerup', endBubbleGesture);
-        bubbleEl.addEventListener('pointercancel', () => {
-            if (longPressTimer !== null) clearTimeout(longPressTimer);
-            longPressTimer = null;
-            bubbleEl.classList.remove('qp-bubble-dragging');
-            dragging = false;
+        bubbleEl.addEventListener('pointercancel', event => {
+            if (activePointerId === event.pointerId) clearBubbleGesture();
         });
 
         bubbleEl.addEventListener('keydown', event => {

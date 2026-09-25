@@ -809,6 +809,95 @@ describe('route-aware circular bubble', () => {
         }
     });
 
+    it.each([
+        ['#/add', 'No items found to fill!'],
+        ['#/manage', 'No items found to update!']
+    ])('runs the %s batch action through the bubble tap path', (hash, expectedToast) => {
+        window.location.hash = hash;
+        const { bubble } = makeBubble({ tornApiKey: 'abcDEF1234567890' });
+        pointer(bubble, 'pointerdown', { pointerId: 7 });
+        pointer(bubble, 'pointerup', { pointerId: 7 });
+
+        expect(document.querySelector('.qp-toast-error')?.textContent).toContain(expectedToast);
+    });
+
+    it('opens the changelog through the main-route bubble tap path', () => {
+        const { bubble } = makeBubble();
+        pointer(bubble, 'pointerdown');
+        pointer(bubble, 'pointerup');
+
+        expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+    });
+
+    it('stays hidden and performs no action on a Personalize bubble tap', () => {
+        window.location.hash = '#/personalize';
+        const { bubble } = makeBubble();
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+        pointer(bubble, 'pointerdown');
+        pointer(bubble, 'pointerup');
+
+        expect(document.querySelector('.qp-overlay')).toBeNull();
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+    });
+
+    it('ignores secondary pointer events without replacing or ending the active gesture', () => {
+        vi.useFakeTimers();
+        try {
+            const { bubble } = makeBubble();
+            pointer(bubble, 'pointerdown', { pointerId: 1, x: 20, y: 30 });
+            pointer(bubble, 'pointerdown', { pointerId: 2, x: 80, y: 90 });
+            expect(bubble.setPointerCapture).toHaveBeenCalledTimes(1);
+            pointer(bubble, 'pointermove', { pointerId: 2, x: 100, y: 110 });
+            expect(bubble.style.left).toBe('10px');
+            expect(bubble.style.top).toBe('20px');
+            pointer(bubble, 'pointerup', { pointerId: 2, x: 100, y: 110 });
+            vi.advanceTimersByTime(350);
+
+            expect(document.querySelector('.qp-head__title')?.textContent).toBe('Quick Pricer settings');
+            pointer(bubble, 'pointerup', { pointerId: 1, x: 20, y: 30 });
+            expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('cancels before drag threshold and allows a later tap without long press', () => {
+        vi.useFakeTimers();
+        try {
+            const { bubble } = makeBubble();
+            pointer(bubble, 'pointerdown', { pointerId: 4 });
+            pointer(bubble, 'pointercancel', { pointerId: 4 });
+            vi.advanceTimersByTime(350);
+            expect(document.querySelector('.qp-overlay')).toBeNull();
+
+            pointer(bubble, 'pointerdown', { pointerId: 5 });
+            pointer(bubble, 'pointerup', { pointerId: 5 });
+            expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('cancels after drag threshold and allows a later tap without drag or long press', () => {
+        vi.useFakeTimers();
+        try {
+            const { bubble } = makeBubble();
+            pointer(bubble, 'pointerdown', { pointerId: 6 });
+            pointer(bubble, 'pointermove', { pointerId: 6, x: 30 });
+            expect(bubble.classList.contains('qp-bubble-dragging')).toBe(true);
+            pointer(bubble, 'pointercancel', { pointerId: 6 });
+            expect(bubble.classList.contains('qp-bubble-dragging')).toBe(false);
+            vi.advanceTimersByTime(350);
+            expect(document.querySelector('.qp-overlay')).toBeNull();
+
+            pointer(bubble, 'pointerdown', { pointerId: 8 });
+            pointer(bubble, 'pointerup', { pointerId: 8 });
+            expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it('moves the bubble by 10 px with each arrow key and persists the position', () => {
         const { bubble, storage } = makeBubble();
         bubble.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
