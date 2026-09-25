@@ -936,6 +936,37 @@
     // API REQUEST QUEUE
     // =====================================================================
 
+    const V2_BATCH_SIZE = 10;
+
+    function buildV2ItemsUrl(itemIds, apiKey) {
+        return `https://api.torn.com/v2/torn/${itemIds.join(',')}/items?key=${apiKey}`;
+    }
+
+    function parseV2ItemsResponse(data, requestedIds) {
+        const values = {};
+        const parsedIds = [];
+        const requested = new Set(requestedIds.map(Number));
+        if (!Array.isArray(data?.items)) return { values, parsedIds };
+
+        for (const item of data.items) {
+            const itemId = Number(item?.id);
+            if (!requested.has(itemId)) continue;
+            const value = item?.value;
+            const hasExpectedSchema = value && typeof value === 'object' &&
+                typeof value.market_price === 'number' && Number.isFinite(value.market_price);
+            if (!hasExpectedSchema) continue;
+
+            values[itemId] = {
+                marketValue: value.market_price,
+                sellPrice: typeof value.sell_price === 'number' && Number.isFinite(value.sell_price)
+                    ? value.sell_price
+                    : 0
+            };
+            parsedIds.push(itemId);
+        }
+        return { values, parsedIds };
+    }
+
     const requestQueue = [];            // { itemId, retries } waiting to be fetched
     const pendingRequests = new Map();  // itemId -> callback[] (queued or in flight)
     let isProcessingQueue = false;
@@ -1760,6 +1791,9 @@
             getItemIdFromImage,
             getQuantity,
             getItemName,
+            V2_BATCH_SIZE,
+            buildV2ItemsUrl,
+            parseV2ItemsResponse,
             getCachedPrice,
             cachePrice,
             clearPriceCache,

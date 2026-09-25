@@ -246,6 +246,47 @@ describe('settings storage', () => {
     });
 });
 
+describe('API v2 adapters', () => {
+    const { QP } = loadScript();
+
+    it('uses a batch size of 10 and builds a v2 item URL', () => {
+        expect(QP.V2_BATCH_SIZE).toBe(10);
+        expect(QP.buildV2ItemsUrl([206, 207], 'abcDEF1234567890'))
+            .toBe('https://api.torn.com/v2/torn/206,207/items?key=abcDEF1234567890');
+    });
+
+    it('parses a valid item response into normalized values', () => {
+        const result = QP.parseV2ItemsResponse({
+            items: [{ id: 206, value: { market_price: 830000, sell_price: 750000 } }]
+        }, [206]);
+        expect(result.values[206]).toEqual({ marketValue: 830000, sellPrice: 750000 });
+        expect(result.parsedIds).toEqual([206]);
+    });
+
+    it('normalizes a null sell price to zero', () => {
+        const result = QP.parseV2ItemsResponse({
+            items: [{ id: 206, value: { market_price: 830000, sell_price: null } }]
+        }, [206]);
+        expect(result.values[206]).toEqual({ marketValue: 830000, sellPrice: 0 });
+    });
+
+    it('parses an item with a zero market price', () => {
+        const result = QP.parseV2ItemsResponse({
+            items: [{ id: 206, value: { market_price: 0, sell_price: 750000 } }]
+        }, [206]);
+        expect(result.values[206]).toEqual({ marketValue: 0, sellPrice: 750000 });
+        expect(result.parsedIds).toEqual([206]);
+    });
+
+    it('does not count an item without the expected schema as parsed', () => {
+        const result = QP.parseV2ItemsResponse({
+            items: [{ id: 206, value: { sell_price: 750000 } }]
+        }, [206]);
+        expect(result.values).toEqual({});
+        expect(result.parsedIds).toEqual([]);
+    });
+});
+
 describe('price cache', () => {
     it('serves fresh entries and rejects stale ones', () => {
         const { QP } = loadScript();
