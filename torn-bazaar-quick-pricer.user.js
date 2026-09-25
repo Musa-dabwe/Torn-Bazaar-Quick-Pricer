@@ -414,7 +414,6 @@
             display: flex; align-items: center; justify-content: center;
         }
         .qp-head__badge svg { width: 22px; height: 22px; display: block; }
-        .qp-head__badge--warn { color: var(--qp-warn); }
         /* The settings header badge is a real control: it opens the changelog. */
         .qp-head__badge--action {
             border: 0; padding: 0; cursor: pointer; font: inherit;
@@ -422,9 +421,10 @@
         }
         .qp-head__badge--action:hover { background: var(--qp-accent); color: #fff; }
         .qp-head__badge--action:focus-visible { outline: 2px solid var(--qp-accent); outline-offset: 2px; }
-        .qp-head__badge--rw { color: var(--qp-rw); }
-        .qp-head__badge--warn { background: var(--qp-warn-bg); font-size: 16px; }
-        .qp-head__badge--rw   { background: var(--qp-rw-bg);   font-size: 16px; position: relative; }
+        /* Every badge now holds a 22px Material icon, so the old per-variant
+           text font sizing was dead styling and each variant is declared once. */
+        .qp-head__badge--warn { background: var(--qp-warn-bg); color: var(--qp-warn); }
+        .qp-head__badge--rw   { background: var(--qp-rw-bg);   color: var(--qp-rw); position: relative; }
         .qp-head__badge--rw .qp-rw-dot { position: absolute; right: -4px; top: -4px; margin: 0; width: 10px; height: 10px; background: var(--qp-rw); }
         .qp-head__title { font: 800 15px/1.15 var(--qp-font); color: var(--qp-ink); }
         .qp-head__sub   { font: 700 11.5px/1.3 var(--qp-font); color: var(--qp-muted); margin-top: 1px; }
@@ -831,7 +831,11 @@
     function showChangelog() {
         if (changelogOpen) return;
         changelogOpen = true;
-        const entry = CHANGELOG[0];
+        // Show the notes for the running version. Falling back to the newest
+        // entry only covers a changelog that has not been given an entry for
+        // this version yet; VERSION is what the gate keys on, so the modal must
+        // never describe a different release than the one just gated.
+        const entry = CHANGELOG.find(item => item.version === VERSION) || CHANGELOG[0];
         const overlay = document.createElement('div');
         overlay.className = 'qp-overlay';
         const modal = document.createElement('div');
@@ -1356,7 +1360,10 @@
                 const quantityInput = amountDiv.querySelector('input');
                 if (quantityInput) {
                     quantityInput.value = '';
+                    // Same events as clearAllQuantities, so a page listener sees
+                    // one consistent signal however the quantity was cleared.
                     quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
                 }
             }
         }
@@ -1751,23 +1758,29 @@
     const BUBBLE_LABELS = Object.freeze({
         fill: 'Quick Fill',
         clear: 'Clear quantities',
-        manage: 'Update all prices'
+        manage: 'Update all prices',
+        // Transient drag hint: the route state is restored on release/cancel.
+        drag: 'Move bubble'
     });
 
     function renderBubbleContent() {
-        if (!bubbleEl || bubbleBusy) return;
+        if (!bubbleEl) return;
         const route = getBubbleTab();
-        // Unsupported routes hide the bubble, and no transient state may reveal
-        // it: the drag branch deliberately does not touch qp-bubble-hidden.
+        // Route visibility wins over every transient state — a running batch and
+        // the drag hint included — so a route with no bubble never shows one.
         if (route === 'unsupported') {
             bubbleEl.classList.add('qp-bubble-hidden');
             return;
         }
         bubbleEl.classList.remove('qp-bubble-hidden');
+        // A running batch owns the bubble contents (progress text) until it
+        // settles; setBubbleBusy(false) re-renders the route state then.
+        if (bubbleBusy) return;
         // While dragging, the settings icon hints that the gesture moves the
         // bubble; the route state is restored on release or cancel.
         if (bubbleDragging) {
             bubbleEl.innerHTML = getMaterialIcon('settings');
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.drag);
             return;
         }
         if (route === 'manage') {
@@ -2069,25 +2082,8 @@
     // =====================================================================
 
     let bazaarObserver = null;
-    let bubbleInputRoot = null;
-
-    function setupBubbleInputRefresh(bazaarRoot) {
-        if (!bazaarRoot || bubbleInputRoot === bazaarRoot) return;
-        bubbleInputRoot = bazaarRoot;
-        bazaarRoot.addEventListener('input', event => {
-            if (event.target && event.target.tagName === 'INPUT') {
-                renderBubbleContent();
-            }
-        });
-        bazaarRoot.addEventListener('change', event => {
-            if (event.target && event.target.tagName === 'INPUT') {
-                renderBubbleContent();
-            }
-        });
-    }
 
     function setupObserver(bazaarRoot) {
-        setupBubbleInputRefresh(bazaarRoot);
         if (bazaarObserver) bazaarObserver.disconnect();
         bazaarObserver = new MutationObserver(() => {
             clearTimeout(mutationDebounceTimer);
@@ -2247,6 +2243,7 @@
             showSettingsPanel,
             fillAllItems,
             clearAllQuantities,
+            clearItemInputs,
             checkForBazaar,
             init
         };

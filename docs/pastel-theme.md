@@ -162,6 +162,9 @@ panel and opens the changelog in its place, so the two dialogs never stack; Ente
 Space are handled explicitly with `preventDefault` so activation stays single-shot. The
 footer **Clear cache** button is text-only, and the dead `.qp-btn svg` sizing rule was
 removed along with the unused `inventory_2` and `more_vert` icon map entries and assets.
+Header badges now hold only 22 px Material icons, so the per-variant `font-size: 16px`
+was dropped and each `--warn`/`--rw` variant is declared once instead of in two split
+rules.
 
 The current script adds `role="dialog"`, `aria-modal="true"`, Escape-to-close, and a
 Tab focus trap to the modal. Clicking the scrim also closes the dialog.
@@ -259,16 +262,20 @@ Dragging uses Pointer Events, clamps movement to the viewport, and persists the
 position in userscript storage. Arrow keys move it in 10 px steps. A long-press of
 350 ms opens settings from either supported route; movement beyond 6 px suppresses both
 settings and tap actions. Once a drag actually begins, the bubble renders the Material
-`settings` icon as a hint that the gesture moves it, and restores the route state on
-release or cancel. During a batch run the bubble displays `completed/total`.
+`settings` icon as a hint that the gesture moves it, takes the transient accessible
+label `Move bubble`, and restores the route state and its label on release or cancel.
+During a batch run the bubble displays `completed/total` on a supported route; a route
+change to an unsupported route hides the bubble immediately, mid-batch, and it stays
+hidden when the batch completes.
 
 ### Toasts
 
 White pill-shaped toasts are stacked bottom-center with a 20 px status icon. Success
-uses `--qp-ok-bg`/`--qp-ok` and a check mark, errors use
-`--qp-danger-bg`/`--qp-danger` and an exclamation mark, and informational messages use
-`--qp-warn-bg`/`--qp-warn` and an `i`. They use `role="status"`, or `role="alert"` for
-errors, and are removed after their duration.
+uses `--qp-ok-bg`/`--qp-ok` with the Material `check_circle` icon, errors use
+`--qp-danger-bg`/`--qp-danger` with the Material `error` icon, and informational
+messages use `--qp-warn-bg`/`--qp-warn` with the Material `info` icon — all 15×15
+SVGs rather than check/exclamation/`i` text glyphs. They use `role="status"`, or
+`role="alert"` for errors, and are removed after their duration.
 
 ### Per-item buttons
 

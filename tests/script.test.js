@@ -71,7 +71,17 @@ describe('Material icon map', () => {
         expect(document.getElementById('qp-style').textContent).not.toContain('.qp-btn svg');
     });
 
-    it('wires mapped icons into status, confirmation, close, overflow, and undo UI paths', () => {
+    // Every header badge now holds a 22px Material icon, so the per-variant
+    // text font sizing is dead styling and each variant must be declared once.
+    it('declares each header badge variant once, with no dead text sizing', () => {
+        const css = document.getElementById('qp-style').textContent;
+        ['warn', 'rw'].forEach(name => {
+            expect(css.match(new RegExp(`\\.qp-head__badge--${name}\\s*\\{`, 'g')) || []).toHaveLength(1);
+        });
+        expect(css).not.toMatch(/\.qp-head__badge--(warn|rw)[^}]*font-size/);
+    });
+
+    it('wires mapped icons into status, confirmation, close, and undo UI paths', () => {
         const script = readFileSync(resolve(testDir, '../torn-bazaar-quick-pricer.user.js'), 'utf8');
         ['check_circle', 'error', 'info', 'warning', 'sports_martial_arts', 'undo', 'open_in_new', 'close']
             .forEach(name => {
@@ -955,28 +965,6 @@ describe('route-aware circular bubble', () => {
         expect(bubble.textContent).toBe('Fill');
     });
 
-    it('re-renders the bubble on real input events without a request or scroll', () => {
-        const root = document.createElement('div');
-        root.id = 'bazaarRoot';
-        document.body.appendChild(root);
-        window.location.hash = '#/add';
-        const { priceInput } = addQuantityRow({ quantity: '2' });
-        root.append(...document.querySelectorAll('.items-cont'));
-        const requests = [];
-        const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
-        const { QP, bubble } = makeBubble({}, options => requests.push(options));
-        QP.setupObserver(root);
-        const input = document.querySelector('.price input');
-        expect(root.contains(input)).toBe(true);
-        input.value = '';
-        input.dispatchEvent(new window.Event('input', { bubbles: true }));
-
-        expect(bubble.textContent).toBe('Fill');
-        expect(requests).toHaveLength(0);
-        expect(scrollTo).not.toHaveBeenCalled();
-        expect(priceInput.value).toBe('');
-    });
-
     it('announces the current action through the bubble accessible label', () => {
         window.location.hash = '#/add';
         const { QP, bubble } = makeBubble();
@@ -1057,7 +1045,7 @@ describe('route-aware circular bubble', () => {
         }
     });
 
-    it('renders the settings icon while dragging and restores the route state on release', () => {
+    it('renders the settings icon and the Move bubble label while dragging, restoring both on release', () => {
         vi.useFakeTimers();
         try {
             window.location.hash = '#/add';
@@ -1066,12 +1054,16 @@ describe('route-aware circular bubble', () => {
             pointer(bubble, 'pointermove', { x: 27, y: 30 });
             expect(bubble.classList.contains('qp-bubble-dragging')).toBe(true);
             expect(bubble.innerHTML).toBe(iconHtml(QP, 'settings'));
+            // The drag hint is announced, not just drawn: the icon alone would
+            // leave a screen reader naming whatever the route action was.
+            expect(bubble.getAttribute('aria-label')).toBe('Move bubble');
             vi.advanceTimersByTime(350);
             pointer(bubble, 'pointerup');
 
             expect(document.querySelector('.qp-overlay')).toBeNull();
             expect(bubble.classList.contains('qp-bubble-dragging')).toBe(false);
             expect(bubble.textContent).toBe('Fill');
+            expect(bubble.getAttribute('aria-label')).toBe('Quick Fill');
             expect(bubble.style.left).toBe('17px');
             expect(bubble.style.top).toBe('20px');
         } finally {
@@ -1110,9 +1102,27 @@ describe('route-aware circular bubble', () => {
             pointer(bubble, 'pointerdown');
             pointer(bubble, 'pointermove', { x: 40, y: 30 });
             expect(bubble.innerHTML).toBe(iconHtml(QP, 'settings'));
+            expect(bubble.getAttribute('aria-label')).toBe('Move bubble');
             pointer(bubble, 'pointercancel');
             expect(bubble.classList.contains('qp-bubble-dragging')).toBe(false);
             expect(bubble.textContent).toBe('Fill');
+            expect(bubble.getAttribute('aria-label')).toBe('Quick Fill');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('keeps the Manage label, not the drag label, after a drag ends on Manage', () => {
+        vi.useFakeTimers();
+        try {
+            window.location.hash = '#/manage';
+            const { QP, bubble } = makeBubble();
+            pointer(bubble, 'pointerdown');
+            pointer(bubble, 'pointermove', { x: 40, y: 30 });
+            expect(bubble.getAttribute('aria-label')).toBe('Move bubble');
+            pointer(bubble, 'pointerup');
+            expect(bubble.getAttribute('aria-label')).toBe('Update all prices');
+            expect(bubble.innerHTML).toBe(iconHtml(QP, 'refresh'));
         } finally {
             vi.useRealTimers();
         }
@@ -1313,6 +1323,63 @@ describe('route-aware circular bubble', () => {
             vi.useRealTimers();
         }
     });
+
+    it('hides a running batch bubble the moment the route leaves the supported pair', async () => {
+        vi.useFakeTimers();
+        try {
+            const requests = [];
+            window.location.hash = '#/add';
+            const { QP, bubble } = makeBubble(
+                { tornApiKey: 'abcDEF1234567890' },
+                options => requests.push(options)
+            );
+            const item = addItem('');
+            const imageWrap = document.createElement('div');
+            imageWrap.className = 'image-wrap';
+            const image = document.createElement('img');
+            image.src = 'https://www.torn.com/images/items/206/large.png';
+            imageWrap.appendChild(image);
+            const title = document.createElement('div');
+            title.className = 'title-wrap';
+            title.appendChild(imageWrap);
+            const amount = document.createElement('div');
+            amount.className = 'amount-main-wrap';
+            amount.appendChild(document.createElement('input'));
+            item.prepend(amount, title);
+
+            const run = QP.fillAllItems();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(requests).toHaveLength(1);
+            // Progress is visible on the supported route it was started from.
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(false);
+            expect(bubble.textContent).toBe('0%');
+
+            // Leaving to an unsupported route must hide the bubble immediately
+            // rather than leaving a progress readout on a route with no bubble.
+            window.location.hash = '#/personalize';
+            window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+            QP.updateBubbleProgress('1/1');
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+
+            requests[0].onload({ responseText: JSON.stringify({ items: [
+                { id: 206, value: { market_price: 100, sell_price: 90 } }
+            ] }) });
+            await run;
+
+            // Settling the batch must not un-hide it either.
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+            expect(QP.getBubbleMode()).toBe('clear');
+
+            // Coming back to a supported route re-renders the post-fill state.
+            window.location.hash = '#/add';
+            window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+            expect(bubble.classList.contains('qp-bubble-hidden')).toBe(false);
+            expect(bubble.textContent).toBe('Fill');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });
 
 describe('first-Add changelog gate', () => {
@@ -1372,6 +1439,38 @@ describe('first-Add changelog gate', () => {
         QP.showChangelog();
         QP.showChangelog();
         expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+    });
+
+    it('does not show the changelog on Add after a reload with the version already seen', () => {
+        const root = document.createElement('div');
+        root.id = 'bazaarRoot';
+        document.body.appendChild(root);
+        window.location.hash = '#/add';
+        // A fresh script instance: the gate must key off persisted storage, not
+        // in-memory state carried over from the session that saw the changelog.
+        const { QP, storage } = loadScript({ changelogSeenVersion: '2.9.4', tornApiKey: 'abcDEF1234567890' });
+
+        QP.init();
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        QP.updateBubbleState();
+        QP.renderBubbleContent();
+
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+        expect(storage.changelogSeenVersion).toBe('2.9.4');
+        expect(QP.shouldShowChangelogForVersion()).toBe(false);
+    });
+
+    it('shows the changelog entry matching the running VERSION, not just the first entry', () => {
+        const script = readFileSync(resolve(testDir, '../torn-bazaar-quick-pricer.user.js'), 'utf8');
+        expect(script).toContain("CHANGELOG.find(item => item.version === VERSION)");
+        // Guard the fall-back: a bare CHANGELOG[0] would be the old behaviour.
+        expect(script).not.toContain('const entry = CHANGELOG[0];');
+
+        const { QP } = loadScript();
+        QP.showChangelog();
+        const version = document.querySelector('.qp-changelog__version');
+        expect(version.textContent.startsWith('2.9.4 ·')).toBe(true);
+        expect(version.textContent).not.toContain('2.9.3');
     });
 
     it('marks the version seen when closed by scrim or Escape', () => {
@@ -1568,6 +1667,33 @@ describe('clearAllQuantities', () => {
         QP.setBubbleMode('clear');
         QP.setBubbleMode('nonsense');
         expect(QP.getBubbleMode()).toBe('fill');
+    });
+
+    it('dispatches the same input and keyup events from both quantity clear paths', () => {
+        const { QP } = mountBubble();
+
+        // Clear-all: quantity only, and the page sees the same event pair.
+        const all = addQuantityRow({ price: '500', quantity: '7' });
+        const allEvents = [];
+        ['input', 'keyup'].forEach(type => {
+            all.quantityControl.addEventListener(type, event => allEvents.push(event.type));
+        });
+        QP.clearAllQuantities();
+        expect(allEvents).toEqual(['input', 'keyup']);
+        expect(all.quantityControl.value).toBe('');
+        expect(all.priceInput.value).toBe('500');
+
+        // Per-item clear: the same pair on the quantity control, so a page
+        // listener cannot tell which path ran or wait for a keyup that never
+        // comes. The per-item path still clears the price, which is its job.
+        const single = addQuantityRow({ price: '900', quantity: '3' });
+        const singleEvents = [];
+        ['input', 'keyup'].forEach(type => {
+            single.quantityControl.addEventListener(type, event => singleEvents.push(event.type));
+        });
+        QP.clearItemInputs(single.item);
+        expect(singleEvents).toEqual(['input', 'keyup']);
+        expect(single.quantityControl.value).toBe('');
     });
 });
 

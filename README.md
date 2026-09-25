@@ -39,6 +39,9 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
     the script never scrolls for you, so scroll down and run again to cover more.
     A route change always resets the bubble to **Fill**.
   - **Manage bazaar:** the bubble shows a `refresh` icon; tapping it runs Update All.
+  - If you navigate away from Add/Manage while a batch is still running, the bubble
+    hides at once — including when that batch finishes. Coming back re-renders the
+    route state.
   - The release notes for 2.9.4 open automatically on your first **Add items** visit
     after the update, and once you close them (close button, scrim, or Escape) they
     are not shown again for that version. You can reopen them any time from the info

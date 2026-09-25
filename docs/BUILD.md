@@ -7,6 +7,18 @@
   verification completed; live desktop/PDA smoke test pending as a release gate
 
 ## Development Timeline
+### 2026-09-26 — v2.9.4 final review fix wave
+Session: [session-2026-09-26-v2.9.4-bubble-followup.md](sessions/session-2026-09-26-v2.9.4-bubble-followup.md)
+Brief: Closed the last whole-branch review findings. A running batch no longer leaves
+its progress bubble visible after the route leaves Add/Manage (and stays hidden when the
+batch settles); the vestigial bazaar-root input/change bubble refresh and its test were
+removed now that the mode is set explicitly; the drag hint announces `Move bubble` and
+restores the route label; `showChangelog()` selects the entry matching `VERSION`; the
+per-item quantity clear dispatches the same `input`+`keyup` pair as the clear-all path;
+and the split/dead header-badge CSS was consolidated. Added coverage for each. No
+pricing, quantity-parsing, API v2 batching, or v1 fallback behavior changed; the live
+desktop/PDA smoke test is still a pending release gate.
+
 ### 2026-09-26 — v2.9.4 bubble follow-up completed and documented
 Session: [session-2026-09-26-v2.9.4-bubble-followup.md](sessions/session-2026-09-26-v2.9.4-bubble-followup.md)
 Brief: Restricted the bubble to the Add and Manage routes (the base `bazaar.php#/` route
@@ -52,6 +64,10 @@ setting, and aligned package metadata to v2.9.3.
   v2 response also confirmed the documented field shape for item IDs 206 and 207.
 
 ### Medium
+- A running batch kept its progress bubble visible after the route changed to
+  Personalize or the base route, because `renderBubbleContent()` returned early while
+  busy. Fixed by resolving route visibility before the busy check, so an unsupported
+  route hides the bubble immediately and keeps it hidden when the batch completes.
 - The v2.9.4 bubble originally opened the changelog from the base `bazaar.php#/` route,
   which showed UI where no bubble is rendered and marked the version seen, so the user
   would never see the notes on the first real Add visit. Fixed by gating the changelog on
@@ -71,7 +87,7 @@ setting, and aligned package metadata to v2.9.3.
   whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit/integration testing: Vitest + jsdom, 168 tests (all passing).
+- Unit/integration testing: Vitest + jsdom, 173 tests (all passing).
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
 - Manual testing: API v2 batching/manual verification passed: the user installed the
