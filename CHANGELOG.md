@@ -13,9 +13,19 @@ so users can diff versions and roll back easily.
   over to the existing per-item API v1 path. Valid items in mixed responses are kept,
   while malformed items fail independently.
 - **Circular route-aware bubble:** the former pill chip is now a draggable 52 px
-  circular bubble. Tap runs the action for Main, Add, or Manage; long-pressing for
-  350 ms opens settings; Personalize hides the bubble. A complete Add route turns the
-  bubble pink with a check icon.
+  circular Material 3 bubble. It is shown only on the **Add** and **Manage** routes;
+  the base route and Personalize hide it. On Add the bubble reads **Fill**, and once
+  a fill finishes it switches to a `close` icon whose tap clears the quantity boxes of
+  the currently loaded rows before returning to **Fill**. On Manage it shows a refresh
+  icon and returns to that state after Update All.
+- **Settings by long press:** long-pressing the bubble for 350 ms opens the settings
+  panel from either supported route; dragging past the drag threshold shows the
+  settings affordance inside the bubble and restores the route state on release.
+- **Settings panel:** the header badge is now a keyboard-accessible `info` button that
+  closes the panel and opens the changelog, and **Clear cache** is a text-only button
+  that still reports `Cleared ✓` for 1.5 seconds. Icons with no remaining consumer
+  (`inventory_2`, `more_vert`) were dropped from the map and from the provenance
+  assets, along with the now-dead `.qp-btn svg` styling rule.
 - **Material 3 icons:** inline SVG paths are Material Design assets reviewed from
   Google's official Material source and acquired from the documented Google Fonts CDN
   URLs. The assets README records the differing legacy serializations and Apache
@@ -24,8 +34,9 @@ so users can diff versions and roll back easily.
   fallback, bounded observer/poll cleanup, and a 20-second timeout cover delayed
   Torn PDA rendering. API prompt, settings, and changelog dialogs do not force focus
   into the API-key field.
-- **Changelog modal:** the Main-route bubble opens the local v2.9.4 release notes;
-  scrim and Escape both close the dialog.
+- **Changelog modal:** these notes open once per version on the Add route — either
+  automatically on the first Add visit or from the settings header info button at any
+  time. Scrim, close button, and Escape all close the dialog and mark the version seen.
 - **Manual verification:** the installed userscript was exercised on the real batch
   path and rows filled in groups of 10, matching the API v2 batching behavior. The
   final live desktop/PDA smoke test remains pending as a release gate.

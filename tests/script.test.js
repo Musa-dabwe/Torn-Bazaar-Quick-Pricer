@@ -59,9 +59,16 @@ describe('Material icon map', () => {
 
     it('sizes every inline icon context and colors header badges violet', () => {
         const css = document.getElementById('qp-style').textContent;
-        ['.qp-item-btn svg', '.qp-bubble svg', '.qp-head__badge svg', '.qp-eye-toggle svg', '.qp-toast__icon svg', '.qp-btn svg']
+        ['.qp-item-btn svg', '.qp-bubble svg', '.qp-head__badge svg', '.qp-eye-toggle svg', '.qp-toast__icon svg']
             .forEach(selector => expect(css).toContain(`${selector} {`));
         expect(css).toMatch(/\.qp-head__badge\s*\{[^}]*color:\s*var\(--qp-accent\)/);
+    });
+
+    // No .qp-btn renders an icon any more (Clear cache is text-only), so the
+    // button-icon sizing rule would be dead styling. Pinned as absent so a
+    // future icon-in-button change has to add the rule back deliberately.
+    it('keeps the dead .qp-btn svg sizing rule out of the stylesheet', () => {
+        expect(document.getElementById('qp-style').textContent).not.toContain('.qp-btn svg');
     });
 
     it('wires mapped icons into status, confirmation, close, overflow, and undo UI paths', () => {
@@ -1686,8 +1693,10 @@ describe('v2.9.4 changelog order and settings info action', () => {
         const order = [
             /clears all listed quantities/i,
             /Long-press the bubble to open Settings/i,
+            /info button in the Settings header opens the changelog/i,
+            /Clear cache is now a text-only button/i,
             /route-aware actions/i,
-            /circular Material 3 bubble/i,
+            /floating control is now a circular Material 3 bubble/i,
             /API v2 batches/i,
             /PDA initialization/i,
             /v1 fallback and rate-limit safeguards/i

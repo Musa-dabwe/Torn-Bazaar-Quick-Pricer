@@ -36,8 +36,10 @@
         notes: Object.freeze([
             'The Add bubble fills prices, then switches to a close icon whose tap clears all listed quantities.',
             'Long-press the bubble to open Settings from any supported view.',
+            'The info button in the Settings header opens the changelog.',
+            'Clear cache is now a text-only button.',
             'Route-aware actions change the icon and action across the Add and Manage views, and the changelog now opens on the Add route.',
-            'The pill is now a circular Material 3 bubble that fits mobile and desktop layouts.',
+            'The floating control is now a circular Material 3 bubble that fits mobile and desktop layouts.',
             'Fresh cached prices stay local; API v2 batches now price up to ten uncached items per request.',
             'PDA initialization remains compatible with delayed page and hash-route loading.',
             'v1 fallback and rate-limit safeguards keep request spacing and recovery behavior intact.'
@@ -531,7 +533,6 @@
             font: 900 13.5px var(--qp-font); text-align: center; flex: 1;
             display: inline-flex; align-items: center; justify-content: center; gap: 7px;
         }
-        .qp-btn svg { width: 17px; height: 17px; flex: none; display: block; }
         .qp-btn--primary {
             background: var(--qp-accent); color: #fff;
             box-shadow: 0 4px 12px rgba(122,107,214,.35);
