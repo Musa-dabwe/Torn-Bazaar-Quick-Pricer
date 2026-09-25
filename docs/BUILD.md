@@ -3,7 +3,7 @@
 ## Overview
 - **Purpose**: Userscript for filling and updating Torn bazaar listings with market-based prices.
 - **Current Version**: 2.9.4
-- **Status**: In active development; automated v2.9.4 checks pass, live desktop/PDA smoke pending
+- **Status**: v2.9.4 current; API v2 batching/manual verification completed; live desktop/PDA smoke pending
 
 ## Development Timeline
 ### 2026-09-25 — v2.9.4 Material 3 bubble release prepared
@@ -52,9 +52,10 @@ setting, and aligned package metadata to v2.9.3.
 - Unit/integration testing: Vitest + jsdom, 138 tests.
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
-- Manual testing: passed. The user installed the local `test.txt` export and confirmed that
-  the real userscript fills rows in batches of 10 and is substantially faster than the
-  previous sequential behavior. A direct API check also confirmed the v2 field shape.
+- Manual testing: API v2 batching/manual verification passed: the user installed the
+  local `test.txt` export and confirmed the real userscript fills rows in batches of 10;
+  a direct API check also confirmed the v2 field shape. The final live desktop/PDA smoke
+  test remains pending and is a release gate.
 
 ## AI Models & Their Contributions
 ### Architecture & Complex Logic

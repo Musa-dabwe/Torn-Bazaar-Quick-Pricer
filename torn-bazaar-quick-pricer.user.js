@@ -1922,8 +1922,25 @@
     // =====================================================================
 
     let bazaarObserver = null;
+    let bubbleInputRoot = null;
+
+    function setupBubbleInputRefresh(bazaarRoot) {
+        if (!bazaarRoot || bubbleInputRoot === bazaarRoot) return;
+        bubbleInputRoot = bazaarRoot;
+        bazaarRoot.addEventListener('input', event => {
+            if (event.target && event.target.tagName === 'INPUT') {
+                renderBubbleContent();
+            }
+        });
+        bazaarRoot.addEventListener('change', event => {
+            if (event.target && event.target.tagName === 'INPUT') {
+                renderBubbleContent();
+            }
+        });
+    }
 
     function setupObserver(bazaarRoot) {
+        setupBubbleInputRefresh(bazaarRoot);
         if (bazaarObserver) bazaarObserver.disconnect();
         bazaarObserver = new MutationObserver(() => {
             clearTimeout(mutationDebounceTimer);
@@ -2067,6 +2084,7 @@
             setBubbleBusy,
             updateBubbleProgress,
             createFloatingBubble,
+            setupObserver,
             showApiKeyPrompt,
             showChangelog,
             showSettingsPanel,

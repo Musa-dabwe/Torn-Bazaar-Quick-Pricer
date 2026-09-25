@@ -914,6 +914,52 @@ describe('route-aware circular bubble', () => {
         expect(bubble.innerHTML).toBe(expectedIcon.innerHTML);
     });
 
+    it('refreshes pink completion from a real price input event without a request or scroll', () => {
+        const root = document.createElement('div');
+        root.id = 'bazaarRoot';
+        document.body.appendChild(root);
+        window.location.hash = '#/add';
+        addItem('100');
+        addItem('250');
+        root.append(...document.querySelectorAll('.items-cont'));
+        const requests = [];
+        const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+        const { QP, bubble } = makeBubble({}, options => requests.push(options));
+        QP.setupObserver(root);
+        const input = document.querySelector('.price input');
+        expect(root.contains(input)).toBe(true);
+        input.value = '';
+        input.dispatchEvent(new window.Event('input', { bubbles: true }));
+
+        expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
+        expect(requests).toHaveLength(0);
+        expect(scrollTo).not.toHaveBeenCalled();
+    });
+
+    it('returns from Personalize to Add and re-renders the bubble', () => {
+        window.location.hash = '#/personalize';
+        const { bubble } = makeBubble();
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+
+        window.location.hash = '#/add';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(false);
+        expect(bubble.querySelector('svg')).toBeTruthy();
+    });
+
+    it('clamps restored and resized positions to the viewport', () => {
+        const previousWidth = window.innerWidth;
+        const previousHeight = window.innerHeight;
+        const { bubble } = makeBubble({ chipPosition: { x: 1000, y: 1000 } });
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: 80 });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: 70 });
+        window.dispatchEvent(new window.Event('resize'));
+
+        expect(bubble.style.left).toBe('22px');
+        expect(bubble.style.top).toBe('12px');
+        Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
+        Object.defineProperty(window, 'innerHeight', { configurable: true, value: previousHeight });
+    });
     it('opens settings after the 350 ms long press and does not tap afterward', () => {
         vi.useFakeTimers();
         try {

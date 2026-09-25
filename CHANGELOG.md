@@ -27,7 +27,8 @@ so users can diff versions and roll back easily.
 - **Changelog modal:** the Main-route bubble opens the local v2.9.4 release notes;
   scrim and Escape both close the dialog.
 - **Manual verification:** the installed userscript was exercised on the real batch
-  path and rows filled in groups of 10, matching the API v2 batching behavior.
+  path and rows filled in groups of 10, matching the API v2 batching behavior. The
+  final live desktop/PDA smoke test remains pending as a release gate.
 
 ## 2.9.3 — 2026-07-12
 
@@ -114,8 +115,8 @@ Implementation of the v2.8.9 code audit.
 ### Security and privacy
 - In the historical 2.9 release, the source used Torn API v1 with the key in the query
   string; migration to API v2 with an `Authorization` header remained deferred. The
-  current Unreleased source uses cache-first API v2 price lookup with the existing v1
-  path as a fallback.
+  current v2.9.4 source uses cache-first API v2 price lookup with the existing v1 path
+  as a fallback.
 - The current source injects a Nunito stylesheet from `fonts.googleapis.com`. The
   script does not send the API key to Google, but the font request is still a
   third-party network request.
@@ -130,7 +131,7 @@ Implementation of the v2.8.9 code audit.
 
 ### Deferred in the historical 2.9 release
 - The 2.9 release deferred a full migration to Torn API v2 because it could not be
-  safely verified without live API access. Current Unreleased source performs cache-first
+  safely verified without live API access. The current v2.9.4 source performs cache-first
   v2 price lookup in batches and retains the v1 endpoint as a fallback.
 
 ## 2.8.9

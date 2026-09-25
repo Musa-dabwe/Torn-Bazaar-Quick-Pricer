@@ -69,7 +69,7 @@ Supporting values used in the current CSS include:
 | Danger tint hover | `#f6dede` |
 | Toggle track (off) | `#d9d5e8` |
 | Row separator | `#edeaf6` |
-| Drag-handle glyph | `#c5c1d6` |
+| Modal close icon | Material `close` SVG, `currentColor` |
 | Note-strip text | `#9a7b45` |
 | Scrim | `rgba(43,39,64,.28)` with 2 px backdrop blur |
 | RW rarity yellow dot | `#e8c97e` |
@@ -144,7 +144,7 @@ A fixed full-screen scrim centers a white card that is 320 px wide, capped at
         <div class="qp-head__title">Quick Pricer settings</div>
         <div class="qp-head__sub">v2.9.4 · <a href="…">GitHub</a></div>
       </div>
-      <button class="qp-close" aria-label="Close">✕</button>
+      <button class="qp-close" aria-label="Close"><!-- Material close SVG --></button>
     </div>
     <div class="qp-body"><!-- 12px-gapped column of fields, toggles, buttons --></div>
   </div>

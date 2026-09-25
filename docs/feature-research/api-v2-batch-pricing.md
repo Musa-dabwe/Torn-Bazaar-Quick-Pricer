@@ -62,7 +62,9 @@ The script does not ask Torn for the user's item count. It must inspect each vis
 - Successful v2 values are normalized to the existing cache shape and written through the existing cache path. The queue retains its 600 ms spacing between every request, including v1 fallback requests.
 - If the v2 response has no usable expected-schema items, the whole batch falls back to the existing per-item v1 path. A mixed response keeps valid items and fails only malformed items.
 - The API v2 migration is limited to public price lookup. Pricing, quantity handling, DOM updates, cache storage, and key handling remain unchanged.
-- No userscript version bump was made: version 2.9.3 remains current.
+- v2.9.4 is the current userscript and project release. The API v2 batching and manual
+  verification described here are completed; the separate live desktop/PDA smoke test
+  remains pending as a release gate.
 
 ## Batch Size and URL-Length Rationale
 - The selected maximum is **10 item IDs per v2 request**. This materially reduces cold-cache request count while keeping each URL bounded and the queue serial. A unit test also asserts that a 10-ID URL remains below 2,000 characters.
