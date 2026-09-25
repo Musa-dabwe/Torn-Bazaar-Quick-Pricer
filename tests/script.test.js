@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { loadScript } from './load-script.js';
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -59,14 +59,14 @@ describe('Material icon map', () => {
 
     it('sizes every inline icon context and colors header badges violet', () => {
         const css = document.getElementById('qp-style').textContent;
-        ['.qp-item-btn svg', '.qp-chip-gear svg', '.qp-head__badge svg', '.qp-eye-toggle svg', '.qp-toast__icon svg', '.qp-btn svg']
+        ['.qp-item-btn svg', '.qp-bubble svg', '.qp-head__badge svg', '.qp-eye-toggle svg', '.qp-toast__icon svg', '.qp-btn svg']
             .forEach(selector => expect(css).toContain(`${selector} {`));
         expect(css).toMatch(/\.qp-head__badge\s*\{[^}]*color:\s*var\(--qp-accent\)/);
     });
 
     it('wires mapped icons into status, confirmation, close, overflow, and undo UI paths', () => {
         const script = readFileSync(resolve(testDir, '../torn-bazaar-quick-pricer.user.js'), 'utf8');
-        ['check_circle', 'error', 'info', 'warning', 'sports_martial_arts', 'inventory_2', 'undo', 'open_in_new', 'close', 'more_vert']
+        ['check_circle', 'error', 'info', 'warning', 'sports_martial_arts', 'inventory_2', 'undo', 'open_in_new', 'close']
             .forEach(name => {
                 const uses = script.match(new RegExp(`getMaterialIcon\\('${name}'\\)`, 'g')) || [];
                 expect(uses.length).toBeGreaterThanOrEqual(1);
@@ -658,6 +658,247 @@ describe('API v2 request queue integration', () => {
     it('keeps a 10-item v2 URL below the length limit', () => {
         const { QP } = loadScript();
         expect(QP.buildV2ItemsUrl(Array.from({ length: 10 }, (_, i) => i + 1), apiKey).length).toBeLessThan(2000);
+    });
+});
+
+describe('route-aware circular bubble', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        window.location.hash = '';
+        vi.restoreAllMocks();
+    });
+
+    function pointer(target, type, { x = 20, y = 30, pointerId = 1 } = {}) {
+        const event = new window.MouseEvent(type, { bubbles: true, clientX: x, clientY: y });
+        Object.defineProperty(event, 'pointerId', { value: pointerId });
+        target.dispatchEvent(event);
+    }
+
+    function makeBubble(storage = {}, requestHandler = () => {}) {
+        const { QP, storage: loadedStorage } = loadScript(storage, requestHandler);
+        const bubble = QP.createFloatingBubble();
+        bubble.setPointerCapture = vi.fn();
+        bubble.getBoundingClientRect = () => ({
+            left: 10, top: 20, right: 62, bottom: 72, width: 52, height: 52
+        });
+        return { QP, bubble, storage: loadedStorage };
+    }
+
+    function addItem(price) {
+        const list = document.createElement('ul');
+        list.className = 'items-cont';
+        const item = document.createElement('li');
+        item.className = 'clearfix';
+        const priceWrap = document.createElement('div');
+        priceWrap.className = 'price';
+        const input = document.createElement('input');
+        input.value = price;
+        priceWrap.appendChild(input);
+        item.appendChild(priceWrap);
+        list.appendChild(item);
+        document.body.appendChild(list);
+        return item;
+    }
+
+    it.each([
+        ['', 'main'],
+        ['#/add', 'add'],
+        ['#/manage', 'manage'],
+        ['#/personalize', 'personalize']
+    ])('maps route %j to %s', (hash, route) => {
+        const { QP } = loadScript();
+        expect(QP.getBubbleRoute(hash)).toBe(route);
+    });
+
+    it('reports complete only when every visible row has a positive non-empty price', () => {
+        const requests = [];
+        const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+        const { QP } = loadScript({}, options => requests.push(options));
+        addItem('1,250');
+        addItem('42');
+
+        expect(QP.isActiveCategoryFilled()).toBe(true);
+        expect(scrollTo).not.toHaveBeenCalled();
+        expect(requests).toHaveLength(0);
+    });
+
+    it.each(['0', ''])('reports incomplete when a visible row price is %j', price => {
+        addItem('100');
+        addItem(price);
+        const { QP } = loadScript();
+
+        expect(QP.isActiveCategoryFilled()).toBe(false);
+    });
+
+    it('reports incomplete for an empty visible category', () => {
+        const { QP } = loadScript();
+        expect(QP.isActiveCategoryFilled()).toBe(false);
+    });
+
+    it('renders the route icon, hides on Personalize, and refreshes on hashchange', () => {
+        const { QP, bubble } = makeBubble();
+        const expectedIcon = name => {
+            const container = document.createElement('div');
+            container.innerHTML = QP.getMaterialIcon(name);
+            return container.innerHTML;
+        };
+        expect(bubble.innerHTML).toBe(expectedIcon('info'));
+
+        window.location.hash = '#/add';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(bubble.innerHTML).toBe(expectedIcon('inventory_2'));
+        expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
+
+        window.location.hash = '#/manage';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(bubble.innerHTML).toBe(expectedIcon('refresh'));
+
+        window.location.hash = '#/personalize';
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(bubble.classList.contains('qp-bubble-hidden')).toBe(true);
+    });
+
+    it('turns Add pink only when all currently visible rows are complete', () => {
+        window.location.hash = '#/add';
+        const { QP, bubble } = makeBubble();
+        addItem('100');
+        addItem('');
+        QP.renderBubbleContent();
+        expect(bubble.classList.contains('qp-bubble-filled')).toBe(false);
+
+        document.querySelectorAll('.price input')[1].value = '250';
+        QP.renderBubbleContent();
+        expect(bubble.classList.contains('qp-bubble-filled')).toBe(true);
+        const expectedIcon = document.createElement('div');
+        expectedIcon.innerHTML = QP.getMaterialIcon('check_circle');
+        expect(bubble.innerHTML).toBe(expectedIcon.innerHTML);
+    });
+
+    it('opens settings after the 350 ms long press and does not tap afterward', () => {
+        vi.useFakeTimers();
+        try {
+            const { bubble } = makeBubble();
+            pointer(bubble, 'pointerdown');
+            vi.advanceTimersByTime(349);
+            expect(document.querySelector('.qp-overlay')).toBeNull();
+            vi.advanceTimersByTime(1);
+            expect(document.querySelector('.qp-head__title')?.textContent).toBe('Quick Pricer settings');
+            pointer(bubble, 'pointerup');
+            expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('treats movement past 6 px as drag and suppresses settings and tap actions', () => {
+        vi.useFakeTimers();
+        try {
+            const { bubble } = makeBubble();
+            pointer(bubble, 'pointerdown');
+            pointer(bubble, 'pointermove', { x: 27, y: 30 });
+            expect(bubble.classList.contains('qp-bubble-dragging')).toBe(true);
+            vi.advanceTimersByTime(350);
+            pointer(bubble, 'pointerup');
+
+            expect(document.querySelector('.qp-overlay')).toBeNull();
+            expect(bubble.classList.contains('qp-bubble-dragging')).toBe(false);
+            expect(bubble.style.left).toBe('17px');
+            expect(bubble.style.top).toBe('20px');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('moves the bubble by 10 px with each arrow key and persists the position', () => {
+        const { bubble, storage } = makeBubble();
+        bubble.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+        expect(bubble.style.left).toBe('20px');
+        expect(bubble.style.top).toBe('20px');
+        expect(storage.chipPosition).toEqual({ x: 20, y: 20 });
+    });
+
+    it.each(['Enter', ' '])('activates %s exactly once', key => {
+        const { bubble } = makeBubble();
+        bubble.dispatchEvent(new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
+        bubble.dispatchEvent(new window.KeyboardEvent('keyup', { key, bubbles: true, cancelable: true }));
+
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
+    });
+
+    it('opens and closes the local v2.9.4 changelog by button, scrim, and Escape', () => {
+        const { QP } = loadScript();
+        const expectedNotes = [
+            /API v2 batches/i,
+            /circular Material 3 bubble/i,
+            /route-aware actions/i,
+            /PDA initialization/i,
+            /v1 fallback and rate-limit safeguards/i
+        ];
+
+        for (const close of [
+            overlay => overlay.querySelector('#qpChangelogClose').click(),
+            overlay => overlay.click(),
+            overlay => overlay.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        ]) {
+            QP.showChangelog();
+            const overlay = document.querySelector('.qp-overlay');
+            expect(overlay).toBeTruthy();
+            expect(overlay.textContent).toContain('2.9.4');
+            expectedNotes.forEach(note => expect(overlay.textContent).toMatch(note));
+            expect(overlay.querySelector('[role="dialog"]')).toBeTruthy();
+            close(overlay);
+            expect(document.querySelector('.qp-overlay')).toBeNull();
+        }
+    });
+
+    it('does not focus an API-key input when opening settings or changelog dialogs', () => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        expect(document.activeElement).not.toBe(document.querySelector('#qpApiKey'));
+        document.querySelector('.qp-overlay').remove();
+
+        QP.showChangelog();
+        expect(document.activeElement).not.toBe(document.querySelector('#qpApiKey'));
+    });
+
+    it('shows batch progress and restores the route icon after completion', async () => {
+        vi.useFakeTimers();
+        try {
+            const requests = [];
+            window.location.hash = '#/add';
+            const { QP, bubble } = makeBubble(
+                { tornApiKey: 'abcDEF1234567890' },
+                options => requests.push(options)
+            );
+            const item = addItem('');
+            const imageWrap = document.createElement('div');
+            imageWrap.className = 'image-wrap';
+            const image = document.createElement('img');
+            image.src = 'https://www.torn.com/images/items/206/large.png';
+            imageWrap.appendChild(image);
+            const title = document.createElement('div');
+            title.className = 'title-wrap';
+            title.appendChild(imageWrap);
+            const amount = document.createElement('div');
+            amount.className = 'amount-main-wrap';
+            amount.appendChild(document.createElement('input'));
+            item.prepend(amount, title);
+            const run = QP.fillAllItems();
+            await vi.advanceTimersByTimeAsync(0);
+            expect(requests).toHaveLength(1);
+            expect(bubble.textContent).toBe('0%');
+            requests[0].onload({ responseText: JSON.stringify({ items: [
+                { id: 206, value: { market_price: 100, sell_price: 90 } }
+            ] }) });
+            await run;
+
+            expect(bubble.textContent).toBe('');
+            expect(bubble.querySelector('.qp-bubble-progress')).toBeNull();
+            expect(bubble.querySelector('svg')).toBeTruthy();
+        } finally {
+            vi.useRealTimers();
+        }
     });
 });
 

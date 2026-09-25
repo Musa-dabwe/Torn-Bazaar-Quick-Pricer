@@ -28,6 +28,18 @@
 
     const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.3';
 
+    const CHANGELOG = Object.freeze([{
+        version: '2.9.4',
+        date: '2026-09-25',
+        notes: Object.freeze([
+            'API v2 batches now price up to ten cached or uncached items per request.',
+            'The pill is now a circular Material 3 bubble that fits mobile and desktop layouts.',
+            'Route-aware actions change the icon and action across Main, Add, Manage, and Personalize.',
+            'PDA initialization remains compatible with delayed page and hash-route loading.',
+            'v1 fallback and rate-limit safeguards keep request spacing and recovery behavior intact.'
+        ])
+    }]);
+
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
     // =====================================================================
@@ -278,7 +290,7 @@
 
     // Best-effort cleanup of a previous instance (PDA re-injection / SPA nav
     // without a full reload): sweep any UI the old instance left in the DOM.
-    ['#qp-style', '#qp-font', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
+    ['#qp-style', '#qp-font', '.qp-bubble', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
         document.querySelectorAll(sel).forEach(el => el.remove()));
 
     // Nunito is the shared display face of the pastel design system
@@ -530,51 +542,37 @@
             color: var(--qp-ink);
         }
 
-        /* ── FLOATING DRAG CHIP ── */
-        .qp-chip {
+        /* ── CHANGELOG ── */
+        .qp-changelog__version { font: 900 14px var(--qp-font); color: var(--qp-ink); margin: 0; }
+        .qp-changelog__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .qp-changelog__list li { position: relative; padding-left: 16px; font: 700 12px/1.5 var(--qp-font); color: var(--qp-ink); }
+        .qp-changelog__list li::before { content: "·"; position: absolute; left: 2px; color: var(--qp-accent); font-weight: 900; }
+
+        /* ── ROUTE-AWARE CIRCULAR BUBBLE ── */
+        .qp-bubble {
             position: fixed;
-            left: 50%; bottom: 18px;
+            left: 50%; bottom: 24px;
             transform: translateX(-50%);
-            display: flex; align-items: center; gap: 6px;
-            background: #fff;
-            border-radius: 999px !important;
-            padding: 6px;
+            width: 52px; height: 52px;
+            border-radius: 50% !important;
+            background: var(--qp-accent);
+            color: #fff;
             z-index: 99998;
-            box-shadow: 0 8px 24px rgba(43,39,64,.18), 0 2px 6px rgba(0,0,0,.08);
+            box-shadow: 0 10px 26px rgba(122,107,214,.4), 0 2px 6px rgba(0,0,0,.08);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
             font-family: var(--qp-font) !important;
             touch-action: none;
+            user-select: none; -webkit-user-select: none;
+            transition: background .2s, box-shadow .2s, transform .15s;
         }
-        .qp-chip.qp-chip-dragging { opacity: 0.85; box-shadow: 0 12px 32px rgba(43,39,64,.3); }
-        .qp-chip-grip {
-            width: 18px; height: 34px;
-            display: flex; align-items: center; justify-content: center;
-            color: #c5c1d6; font: 800 13px/1 var(--qp-font); letter-spacing: -1px;
-            cursor: grab; flex-shrink: 0; user-select: none;
-        }
-        .qp-chip-grip:active { cursor: grabbing; }
-        .qp-chip-grip svg { width: 16px; height: 16px; display: block; }
-        .qp-chip-fill {
-            border: none; cursor: pointer;
-            background: var(--qp-accent) !important; color: #fff !important;
-            border-radius: 999px !important; padding: 9px 18px !important;
-            font: 900 12.5px var(--qp-font) !important;
-            box-shadow: 0 3px 10px rgba(122,107,214,.35);
-            white-space: nowrap;
-            transition: background .15s;
-        }
-        .qp-chip-fill:hover { background: #6a5ac6 !important; }
-        .qp-chip-fill:disabled {                  /* busy: queue is running */
-            background: var(--qp-accent-bg) !important; color: var(--qp-accent) !important;
-            box-shadow: none; cursor: default;
-        }
-        .qp-chip-gear {
-            border: none; cursor: pointer;
-            width: 34px; height: 34px; border-radius: 50% !important; padding: 0 !important;
-            background: #f4f2fa !important; color: var(--qp-muted) !important;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .qp-chip-gear:hover { background: #e9e5f6 !important; }
-        .qp-chip-gear svg { width: 18px; height: 18px; display: block; }
+        .qp-bubble:active { transform: translateX(-50%) scale(.94); }
+        .qp-bubble.qp-bubble-dragging { opacity: .9; box-shadow: 0 16px 38px rgba(43,39,64,.32); cursor: grabbing; }
+        .qp-bubble.qp-bubble-busy { cursor: progress; }
+        .qp-bubble.qp-bubble-filled { background: #e8467c; box-shadow: 0 10px 26px rgba(232,70,124,.4), 0 2px 6px rgba(0,0,0,.08); }
+        .qp-bubble.qp-bubble-hidden { display: none; }
+        .qp-bubble svg { width: 26px; height: 26px; display: block; pointer-events: none; }
+        .qp-bubble-progress { color: #fff; font: 900 11px/1 var(--qp-font); user-select: none; }
 
         /* ── TOASTS ── */
         .qp-toast-wrap {
@@ -784,6 +782,54 @@
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
+    }
+
+    function showChangelog() {
+        const entry = CHANGELOG[0];
+        const overlay = document.createElement('div');
+        overlay.className = 'qp-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'qp-modal';
+        const head = document.createElement('div');
+        head.className = 'qp-head';
+        const badge = document.createElement('div');
+        badge.className = 'qp-head__badge';
+        badge.innerHTML = getMaterialIcon('info');
+        const title = document.createElement('div');
+        title.className = 'qp-head__title';
+        title.textContent = "What's new";
+        const closeButton = document.createElement('button');
+        closeButton.className = 'qp-close';
+        closeButton.id = 'qpChangelogClose';
+        closeButton.setAttribute('aria-label', 'Close');
+        closeButton.innerHTML = getMaterialIcon('close');
+        head.append(badge, title, closeButton);
+
+        const body = document.createElement('div');
+        body.className = 'qp-body';
+        const sub = document.createElement('div');
+        sub.className = 'qp-head__sub';
+        sub.textContent = `Quick Pricer v${VERSION}`;
+        const version = document.createElement('p');
+        version.className = 'qp-changelog__version';
+        version.textContent = `${entry.version} · ${entry.date}`;
+        const list = document.createElement('ul');
+        list.className = 'qp-changelog__list';
+        entry.notes.forEach(note => {
+            const item = document.createElement('li');
+            item.textContent = note;
+            list.appendChild(item);
+        });
+        body.append(sub, version, list);
+        modal.append(head, body);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        const close = () => overlay.remove();
+        closeButton.addEventListener('click', close);
+        overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+        wireOverlayA11y(overlay, close);
+        closeButton.focus();
     }
 
     function showSettingsPanel() {
@@ -1493,17 +1539,13 @@
     }
 
     async function updateAllManagePrices() {
-        const updateButton = chipFillBtn;
-        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; updateButton.textContent = 'Loading…'; }
-        const restoreButton = () => {
-            if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
-        };
+        setBubbleBusy(true, '0%');
 
         // Only the rows Torn has already rendered are processed. If more may be
         // waiting below the fold, we flag it in the summary so the user can
         // scroll to load them and run again (see mayHaveUnloadedItems).
         const items = getManageItems();
-        if (items.length === 0) { restoreButton(); qpToast('No items found to update!', 'error'); return; }
+        if (items.length === 0) { setBubbleBusy(false); qpToast('No items found to update!', 'error'); return; }
         const moreBelow = mayHaveUnloadedItems(items);
 
         // Collect the actual work first so progress and totals are accurate.
@@ -1527,13 +1569,13 @@
         let updated = 0, failed = 0, done = 0;
         for (const { priceDiv, itemId, itemName } of work) {
             done++;
-            if (updateButton) updateButton.textContent = `Updating ${done}/${work.length}`;
+            updateBubbleProgress(`${done}/${work.length}`);
             const result = await updateManageItemPrice(priceDiv, itemId, itemName);
             if (result === 'updated') updated++;
             else if (result === 'failed') failed++;
         }
 
-        restoreButton();
+        setBubbleBusy(false);
         let msg = `Updated ${updated} of ${work.length} item price${work.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
         if (skippedDollar > 0) msg += ` — ${skippedDollar} $1 item${skippedDollar > 1 ? 's' : ''} skipped`;
@@ -1543,146 +1585,223 @@
     }
 
     // =====================================================================
-    // FLOATING DRAG CHIP  (replaces the old embedded "Quick Fill / Update All
-    // / Settings" buttons, which Torn's desktop-top layout could clip or
-    // hide entirely depending on header width. The chip lives on document.body
-    // as a fixed-position element, independent of any page container, so it
-    // can't be hidden by a layout it doesn't belong to. Position is
-    // draggable and persisted per player via GM_setValue.)
+    // ROUTE-AWARE FLOATING BUBBLE
     // =====================================================================
 
-    let chipEl = null;
-    let chipFillBtn = null;
-    let chipContext = null; // 'add' | 'manage' | null
+    let bubbleEl = null;
+    let bubbleBusy = false;
+    const BUBBLE_LONG_PRESS_MS = 350;
+    const BUBBLE_DRAG_THRESHOLD = 6;
+    const BUBBLE_KEYBOARD_STEP = 10;
 
-    function clampChipPosition(x, y) {
-        const rect = chipEl.getBoundingClientRect();
+    function getBubbleRoute(hash) {
+        const route = String(hash || '').trim().split(/[/?#]/).filter(Boolean)[0];
+        if (route === 'add' || route === 'manage' || route === 'personalize') return route;
+        return 'main';
+    }
+
+    function getBubbleTab() { return getBubbleRoute(window.location.hash); }
+
+    function clampBubblePosition(x, y) {
+        const rect = bubbleEl.getBoundingClientRect();
         const maxX = window.innerWidth - rect.width - 6;
         const maxY = window.innerHeight - rect.height - 6;
         return { x: Math.min(Math.max(x, 6), Math.max(maxX, 6)), y: Math.min(Math.max(y, 6), Math.max(maxY, 6)) };
     }
 
-    function applyChipPosition() {
-        const pos = GM_getValue('chipPosition', null);
-        if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-            // Clamp to the current viewport: a position saved on a large monitor
-            // must not restore off-screen on a phone.
-            const { x, y } = clampChipPosition(pos.x, pos.y);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
-        }
-        // otherwise leave the CSS default (bottom-center) in place
+    function applyBubblePosition() {
+        const position = GM_getValue('chipPosition', null);
+        if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') return;
+        const { x, y } = clampBubblePosition(position.x, position.y);
+        bubbleEl.style.left = `${x}px`;
+        bubbleEl.style.top = `${y}px`;
+        bubbleEl.style.bottom = 'auto';
+        bubbleEl.style.transform = 'none';
     }
 
-    function createFloatingChip() {
-        if (chipEl) return;
-        // Defensive cleanup: if the script gets re-injected (PDA re-injection, SPA route
-        // change) without a full page reload, a previous instance's chip can be orphaned
-        // in the DOM with no reference to clean it up. Sweep those out before making a new one.
-        document.querySelectorAll('.qp-chip').forEach(el => el.remove());
-        chipEl = document.createElement('div');
-        chipEl.className = 'qp-chip';
-        chipEl.innerHTML = `
-            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">${getMaterialIcon('more_vert')}</div>
-            <button class="qp-chip-fill" id="qpChipFill">Quick Fill</button>
-            <button class="qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${getMaterialIcon('settings')}</button>
-        `;
-        document.body.appendChild(chipEl);
-        chipFillBtn = chipEl.querySelector('#qpChipFill');
-
-        applyChipPosition();
-
-        chipEl.querySelector('#qpChipGear').addEventListener('click', (e) => {
-            e.preventDefault();
-            showSettingsPanel();
+    function isItemFilled(itemElement) {
+        const priceWrap = itemElement.querySelector(SELECTORS.priceWrap);
+        if (!priceWrap) return false;
+        return Array.from(priceWrap.querySelectorAll('input')).some(input => {
+            const raw = String(input.value || '').trim();
+            if (raw === '') return false;
+            const value = Number(raw.replace(/,/g, ''));
+            return Number.isFinite(value) && value > 0;
         });
+    }
 
-        chipFillBtn.addEventListener('click', () => {
-            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
-            if (chipContext === 'manage') updateAllManagePrices();
-            else fillAllItems();
-        });
+    function isActiveCategoryFilled() {
+        const items = getVisibleItems();
+        return items.length > 0 && items.every(isItemFilled);
+    }
 
-        // Drag handling via Pointer Events (covers mouse + touch/stylus in one API)
-        const grip = chipEl.querySelector('#qpChipGrip');
-        let dragOffsetX = 0, dragOffsetY = 0, dragging = false;
+    function renderBubbleContent() {
+        if (!bubbleEl || bubbleBusy) return;
+        const route = getBubbleTab();
+        bubbleEl.classList.remove('qp-bubble-filled');
+        if (route === 'personalize') {
+            bubbleEl.classList.add('qp-bubble-hidden');
+            return;
+        }
+        bubbleEl.classList.remove('qp-bubble-hidden');
+        if (route === 'add') {
+            const filled = isActiveCategoryFilled();
+            bubbleEl.classList.toggle('qp-bubble-filled', filled);
+            bubbleEl.innerHTML = getMaterialIcon(filled ? 'check_circle' : 'inventory_2');
+        } else if (route === 'manage') {
+            bubbleEl.innerHTML = getMaterialIcon('refresh');
+        } else {
+            bubbleEl.innerHTML = getMaterialIcon('info');
+        }
+    }
 
-        grip.addEventListener('pointerdown', (e) => {
-            dragging = true;
-            chipEl.classList.add('qp-chip-dragging');
-            const rect = chipEl.getBoundingClientRect();
-            // Lock in current pixel position before dragging so left/top math is stable
-            chipEl.style.left = rect.left + 'px';
-            chipEl.style.top = rect.top + 'px';
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
-            dragOffsetX = e.clientX - rect.left;
-            dragOffsetY = e.clientY - rect.top;
-            grip.setPointerCapture(e.pointerId);
-        });
-        grip.addEventListener('pointermove', (e) => {
-            if (!dragging) return;
-            const { x, y } = clampChipPosition(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
-        });
-        const endDrag = (e) => {
-            if (!dragging) return;
+    function updateBubbleState() { renderBubbleContent(); }
+
+    function setBubbleBusy(busy, progressText) {
+        bubbleBusy = busy;
+        if (!bubbleEl) return;
+        bubbleEl.classList.toggle('qp-bubble-busy', busy);
+        if (busy) {
+            const progress = document.createElement('span');
+            progress.className = 'qp-bubble-progress';
+            progress.textContent = String(progressText ?? '');
+            bubbleEl.replaceChildren(progress);
+        } else {
+            renderBubbleContent();
+        }
+    }
+
+    function updateBubbleProgress(text) {
+        if (bubbleBusy && bubbleEl) setBubbleBusy(true, text);
+    }
+
+    function onBubbleTap() {
+        if (bubbleBusy) return;
+        const route = getBubbleTab();
+        if (route === 'personalize') { renderBubbleContent(); return; }
+        if (route === 'main') { showChangelog(); return; }
+        if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+        if (route === 'manage') updateAllManagePrices();
+        else fillAllItems();
+    }
+
+    function onBubbleLongPress() {
+        if (getBubbleTab() !== 'personalize') showSettingsPanel();
+    }
+
+    function createFloatingBubble() {
+        if (bubbleEl) return bubbleEl;
+        document.querySelectorAll('.qp-bubble').forEach(element => element.remove());
+        bubbleEl = document.createElement('div');
+        bubbleEl.className = 'qp-bubble';
+        bubbleEl.setAttribute('role', 'button');
+        bubbleEl.setAttribute('tabindex', '0');
+        bubbleEl.setAttribute('aria-label', 'Quick Pricer');
+        bubbleEl.setAttribute('title', 'Quick Pricer');
+        document.body.appendChild(bubbleEl);
+        renderBubbleContent();
+        applyBubblePosition();
+
+        let longPressTimer = null;
+        let dragging = false;
+        let didLongPress = false;
+        let startX = 0;
+        let startY = 0;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        bubbleEl.addEventListener('pointerdown', event => {
+            if (bubbleBusy) return;
             dragging = false;
-            chipEl.classList.remove('qp-chip-dragging');
-            const rect = chipEl.getBoundingClientRect();
-            GM_setValue('chipPosition', { x: rect.left, y: rect.top });
-        };
-        grip.addEventListener('pointerup', endDrag);
-        grip.addEventListener('pointercancel', endDrag);
+            didLongPress = false;
+            startX = event.clientX;
+            startY = event.clientY;
+            const rect = bubbleEl.getBoundingClientRect();
+            bubbleEl.style.left = `${rect.left}px`;
+            bubbleEl.style.top = `${rect.top}px`;
+            bubbleEl.style.bottom = 'auto';
+            bubbleEl.style.transform = 'none';
+            dragOffsetX = event.clientX - rect.left;
+            dragOffsetY = event.clientY - rect.top;
+            bubbleEl.setPointerCapture(event.pointerId);
+            longPressTimer = setTimeout(() => {
+                longPressTimer = null;
+                didLongPress = true;
+                onBubbleLongPress();
+            }, BUBBLE_LONG_PRESS_MS);
+        });
 
-        // Keyboard repositioning for the grip (paired with its role="button")
-        grip.addEventListener('keydown', (e) => {
-            const step = 10;
-            let dx = 0, dy = 0;
-            if (e.key === 'ArrowLeft') dx = -step;
-            else if (e.key === 'ArrowRight') dx = step;
-            else if (e.key === 'ArrowUp') dy = -step;
-            else if (e.key === 'ArrowDown') dy = step;
+        bubbleEl.addEventListener('pointermove', event => {
+            if (bubbleBusy) return;
+            const movedPastThreshold = Math.hypot(event.clientX - startX, event.clientY - startY) > BUBBLE_DRAG_THRESHOLD;
+            if (longPressTimer !== null && movedPastThreshold) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                dragging = true;
+                bubbleEl.classList.add('qp-bubble-dragging');
+            }
+            if (!dragging) return;
+            const { x, y } = clampBubblePosition(event.clientX - dragOffsetX, event.clientY - dragOffsetY);
+            bubbleEl.style.left = `${x}px`;
+            bubbleEl.style.top = `${y}px`;
+        });
+
+        const endBubbleGesture = () => {
+            if (bubbleBusy) return;
+            if (longPressTimer !== null) clearTimeout(longPressTimer);
+            longPressTimer = null;
+            bubbleEl.classList.remove('qp-bubble-dragging');
+            if (dragging) {
+                dragging = false;
+                const rect = bubbleEl.getBoundingClientRect();
+                GM_setValue('chipPosition', { x: rect.left, y: rect.top });
+                return;
+            }
+            if (!didLongPress) onBubbleTap();
+        };
+        bubbleEl.addEventListener('pointerup', endBubbleGesture);
+        bubbleEl.addEventListener('pointercancel', () => {
+            if (longPressTimer !== null) clearTimeout(longPressTimer);
+            longPressTimer = null;
+            bubbleEl.classList.remove('qp-bubble-dragging');
+            dragging = false;
+        });
+
+        bubbleEl.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onBubbleTap();
+                return;
+            }
+            let dx = 0;
+            let dy = 0;
+            if (event.key === 'ArrowLeft') dx = -BUBBLE_KEYBOARD_STEP;
+            else if (event.key === 'ArrowRight') dx = BUBBLE_KEYBOARD_STEP;
+            else if (event.key === 'ArrowUp') dy = -BUBBLE_KEYBOARD_STEP;
+            else if (event.key === 'ArrowDown') dy = BUBBLE_KEYBOARD_STEP;
             else return;
-            e.preventDefault();
-            const rect = chipEl.getBoundingClientRect();
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
-            const { x, y } = clampChipPosition(rect.left + dx, rect.top + dy);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
+            event.preventDefault();
+            const rect = bubbleEl.getBoundingClientRect();
+            bubbleEl.style.bottom = 'auto';
+            bubbleEl.style.transform = 'none';
+            const { x, y } = clampBubblePosition(rect.left + dx, rect.top + dy);
+            bubbleEl.style.left = `${x}px`;
+            bubbleEl.style.top = `${y}px`;
             GM_setValue('chipPosition', { x, y });
+        });
+        bubbleEl.addEventListener('keyup', event => {
+            if (event.key === ' ') event.preventDefault();
         });
 
         window.addEventListener('resize', () => {
-            if (!chipEl) return;
-            const pos = GM_getValue('chipPosition', null);
-            if (!pos) return;
-            const { x, y } = clampChipPosition(pos.x, pos.y);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
+            const position = GM_getValue('chipPosition', null);
+            if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') return;
+            const { x, y } = clampBubblePosition(position.x, position.y);
+            bubbleEl.style.left = `${x}px`;
+            bubbleEl.style.top = `${y}px`;
         });
-    }
-
-    function updateChipContext() {
-        if (!chipEl) return;
-        // A running batch owns the button label (progress text) — don't clobber it.
-        if (chipFillBtn && chipFillBtn.disabled) return;
-        const manageCount = getManageItems().length;
-        if (manageCount > 0) {
-            chipContext = 'manage';
-            chipFillBtn.textContent = 'Update All';
-            return;
-        }
-        const addCount = getVisibleItems().length;
-        if (addCount > 0) {
-            chipContext = 'add';
-            chipFillBtn.textContent = 'Quick Fill';
-        }
-        // if neither section has items yet (still loading), keep the last known context
+        window.addEventListener('hashchange', updateBubbleState);
+        return bubbleEl;
     }
 
     function processManageItems() {
@@ -1744,13 +1863,12 @@
     }
 
     async function fillAllItems() {
-        const fillButton = chipFillBtn;
-        if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Loading…'; }
+        setBubbleBusy(true, '0%');
         // Same as Update All: only the rows Torn has already rendered are
         // processed; rows below the fold aren't in the DOM until scrolled to.
         const items = getVisibleItems();
         if (items.length === 0) {
-            if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
+            setBubbleBusy(false);
             qpToast('No items found to fill!', 'error');
             return;
         }
@@ -1760,15 +1878,14 @@
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
             return true;
         });
-        if (fillButton) fillButton.textContent = `Filling 0/${toFill.length}`;
         let completed = 0, filled = 0;
         const promises = toFill.map(item => fillItemPrice(item).then((ok) => {
             completed++;
             if (ok) filled++;
-            if (fillButton) fillButton.textContent = `Filling ${completed}/${toFill.length}`;
+            updateBubbleProgress(`${completed}/${toFill.length}`);
         }));
         await Promise.all(promises);
-        if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
+        setBubbleBusy(false);
         const failedCount = toFill.length - filled;
         let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
@@ -1803,7 +1920,7 @@
             mutationDebounceTimer = setTimeout(() => {
                 processAllItems();
                 processManageItems();
-                updateChipContext();
+                updateBubbleState();
             }, 300);
         });
         bazaarObserver.observe(bazaarRoot, { childList: true, subtree: true });
@@ -1816,8 +1933,8 @@
         processAllItems();
         setupObserver(bazaarRoot);
         processManageItems();
-        createFloatingChip();
-        updateChipContext();
+        createFloatingBubble();
+        updateBubbleState();
         if (!CONFIG.apiKey) showApiKeyPrompt();
     }
 
@@ -1922,7 +2039,17 @@
             CONFIG,
             SELECTORS,
             MATERIAL_ICONS,
-            getMaterialIcon
+            getMaterialIcon,
+            getBubbleRoute,
+            isItemFilled,
+            isActiveCategoryFilled,
+            renderBubbleContent,
+            setBubbleBusy,
+            updateBubbleProgress,
+            createFloatingBubble,
+            showChangelog,
+            showSettingsPanel,
+            fillAllItems
         };
         return;
     }
