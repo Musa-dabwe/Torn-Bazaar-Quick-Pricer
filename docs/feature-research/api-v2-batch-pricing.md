@@ -70,8 +70,8 @@ The script does not ask Torn for the user's item count. It must inspect each vis
 - The key is included only to describe URL length with a dummy value. No real API key was requested, used, or recorded.
 
 ## Live Smoke-Test Status
-- **Partially verified:** a live read-only request to Torn API v2 for item IDs `206,207` returned HTTP 200 with an `items` array. Each returned item had a numeric `value.market_price` and `value.sell_price: null`, matching the parser contract. No key or request URL was recorded in the repository.
-- **Full userscript-path verification remains blocked:** a later request through the Node/jsdom integration harness returned Torn error code 2 (`Incorrect key`), so the callback/cache/row-fill path could not be verified with a still-valid key. No live integration success is claimed.
-- The implementation remains based on the OpenAPI shape `items[]`, with each valid item containing numeric `id` and `value.market_price`; `value.sell_price` may be numeric or `null` and is normalized to zero when null. The direct API response confirmed those field names for the tested item IDs.
-- Before release, a still-valid Public key must confirm the normal userscript path: a multi-ID v2 response, valid result caching, and corresponding loaded-row filling. If the live field names differ, the parser must be updated before release; the tested v1 fallback remains the protection.
-- The Public key used for the partial check was not stored in the repository and should be deleted or rotated as planned.
+- **API response shape verified:** a live read-only request to Torn API v2 for item IDs `206,207` returned HTTP 200 with an `items` array. Each returned item had a numeric `value.market_price` and `value.sell_price: null`, matching the parser contract. No key or request URL was recorded in the repository.
+- **Userscript performance verified manually:** the user installed the local test export, ran the real script, and confirmed that items fill in batches of 10 rows and substantially faster than the previous one-row-at-a-time behavior.
+- The implementation matches the OpenAPI shape `items[]`, with each valid item containing numeric `id` and `value.market_price`; `value.sell_price` may be numeric or `null` and is normalized to zero when null.
+- Automated tests cover cache reuse and zero-request behavior; the manual report confirmed the batched fill path and speed improvement, but did not separately measure a second cached run.
+- The Public key used for the direct API check was not stored in the repository and should be deleted or rotated as planned.

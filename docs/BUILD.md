@@ -3,7 +3,7 @@
 ## Overview
 - **Purpose**: Userscript for filling and updating Torn bazaar listings with market-based prices.
 - **Current Version**: 2.9.3
-- **Status**: In active development; API v2 batching implemented, live smoke test pending
+- **Status**: In active development; API v2 batching implemented and manually verified
 
 ## Development Timeline
 ### 2026-09-25 — API v2 batch pricing implemented
@@ -29,7 +29,8 @@ setting, and aligned package metadata to v2.9.3.
 
 ## Bugs Discovered & Fixed
 ### Critical
-- Full live userscript-path verification is pending. A direct v2 response confirmed the documented field shape for item IDs 206 and 207, but a later request with the temporary key returned API error code 2 (`Incorrect key`) before the normal queue/cache/row-fill path could be verified.
+- None known after the user’s manual verification of the real batched fill path. A direct
+  v2 response also confirmed the documented field shape for item IDs 206 and 207.
 
 ### Medium
 - Documentation and project metadata claimed v2.9.5 and circular-bubble behavior while
@@ -44,7 +45,9 @@ setting, and aligned package metadata to v2.9.3.
 - Unit/integration testing: Vitest + jsdom, 67 tests.
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
-- Manual testing: partial direct API v2 field-shape check passed for items 206 and 207; full userscript queue/cache/row-fill smoke test remains pending because the temporary key later returned API error code 2.
+- Manual testing: passed. The user installed the local `test.txt` export and confirmed that
+  the real userscript fills rows in batches of 10 and is substantially faster than the
+  previous sequential behavior. A direct API check also confirmed the v2 field shape.
 
 ## AI Models & Their Contributions
 ### Architecture & Complex Logic
