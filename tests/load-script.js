@@ -12,7 +12,7 @@ export function loadScript(storage = {}, requestHandler = () => {}) {
     globalThis.GM_getValue = (key, def) => (key in storage ? storage[key] : def);
     globalThis.GM_setValue = (key, val) => { storage[key] = val; };
     globalThis.GM_xmlhttpRequest = requestHandler;
-    globalThis.GM_info = { script: { version: '2.9.3' } };
+    globalThis.GM_info = { script: { version: '2.9.4' } };
     delete require.cache[SCRIPT_PATH];
     const QP = require(SCRIPT_PATH);
     return { QP, storage };

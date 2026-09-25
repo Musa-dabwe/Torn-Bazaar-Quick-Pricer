@@ -2,15 +2,15 @@
 
 The **Pastel** theme is the light lavender design system used by Torn Bazaar Quick
 Pricer (`qp-` prefix). The current userscript uses these tokens and components for its
-settings panel, API-key prompt, confirmations, toasts, floating control chip, and
+settings panel, API-key prompt, confirmations, toasts, floating circular bubble, and
 per-item buttons.
 
 Design goals in the current source:
 
 - **Soft and friendly** — a light lavender palette on white cards with muted status
   colors.
-- **Rounded everything** — cards, fields, buttons, the floating chip, and toasts use
-  generous radii; the chip and toasts are pills.
+- **Rounded everything** — cards, fields, buttons, and toasts use generous radii;
+  the floating control is a compact circle and toasts are pills.
 - **Playful motion** — dialogs spring in, toasts slide up, and RW dots blink.
 - **PDA-friendly** — components fit a 320 px-wide modal and provide touch targets.
 
@@ -20,7 +20,7 @@ The current script uses a `qp-` prefix. BEM-ish selectors are used for the UI:
 
 | Pattern | Example |
 |---|---|
-| Block | `qp-modal`, `qp-chip`, `qp-toast` |
+| Block | `qp-modal`, `qp-bubble`, `qp-toast` |
 | Element | `qp-head__title`, `qp-toast__icon` |
 | Modifier | `qp-btn--primary`, `qp-btn--danger`, `qp-btn--rw` |
 
@@ -63,7 +63,7 @@ Supporting values used in the current CSS include:
 
 | Use | Value |
 |---|---|
-| Card / chip / toast surface | `#fff` |
+| Card / bubble / toast surface | `#fff` |
 | Accent hover | `#6a5ac6` |
 | Ghost / close-button surface | `#f4f2fa` (hover `#e9e5f6`) |
 | Danger tint hover | `#f6dede` |
@@ -85,7 +85,7 @@ tint.
 | Toggle card | 14 px | none |
 | Fields, notes, buttons, number cells | 12 px | primary buttons use an accent shadow |
 | Per-item buttons | 10 px | `0 3px 8px rgba(122,107,214,.3)` |
-| Floating chip | 999 px | `0 8px 24px rgba(43,39,64,.18), 0 2px 6px rgba(0,0,0,.08)` |
+| Floating bubble | 50% (52 px circle) | `0 10px 26px rgba(122,107,214,.4), 0 2px 6px rgba(0,0,0,.08)` |
 | Toasts | 999 px | `0 6px 18px rgba(43,39,64,.16)` |
 
 Fields use a 2 px border (1.5 px for compact number cells) and change to the accent
@@ -120,9 +120,11 @@ The current source defines:
 
 ## Iconography
 
-The script uses inline SVG only for action and header icons. The icons use round caps
-and joins, with stroke widths around 2.2–2.6 on a 24×24 viewBox. The warning and RW
-confirmation dialogs use emoji badge glyphs (`⚠️` and `🗡️`).
+The script embeds reviewed Material 3 SVG paths from Google's official Material Design
+Icons repository. They are normalized to a 24×24 viewBox, use `currentColor`, and are
+inlined so the single-file PDA userscript needs no runtime font or SVG request. The
+source assets are retained under `docs/assets/material-icons/` for attribution; Google's
+Material Design Icons repository is licensed under Apache License 2.0.
 
 ## Components
 
@@ -138,7 +140,7 @@ A fixed full-screen scrim centers a white card that is 320 px wide, capped at
       <div class="qp-head__badge"><!-- 40x40 accent-tinted icon badge --></div>
       <div>
         <div class="qp-head__title">Quick Pricer settings</div>
-        <div class="qp-head__sub">v2.9.3 · <a href="…">GitHub</a></div>
+        <div class="qp-head__sub">v2.9.4 · <a href="…">GitHub</a></div>
       </div>
       <button class="qp-close" aria-label="Close">✕</button>
     </div>
@@ -219,20 +221,22 @@ Current rows are:
 Buttons sit in `.qp-btn-row` with an 8 px gap. The current settings footer combines a
 danger-tinted Clear cache button with a wider Save settings button.
 
-### Floating pill chip
+### Route-aware circular bubble
 
-The current source creates one fixed pill-shaped `.qp-chip` at the bottom center by
-default. It contains:
+The current source creates one fixed 52 px circular `.qp-bubble` at the bottom center
+by default. Its Material 3 icon and action follow the current Torn route:
 
-- `.qp-chip-grip`: a `⋮⋮` keyboard-operable drag handle;
-- `.qp-chip-fill`: the context-sensitive Quick Fill or Update All button; and
-- `.qp-chip-gear`: the settings button.
+- **Main:** the tap opens the local changelog modal.
+- **Add:** the tap runs Quick Fill for the loaded Add Items rows.
+- **Manage:** the tap runs Update All for the loaded Manage rows.
+- **Personalize:** the bubble is hidden and performs no action.
 
-The grip uses Pointer Events, clamps movement to the viewport, and persists the
-position in userscript storage. Arrow keys move it in 10 px steps. The action button
-is detected as Manage when rendered manage items exist, otherwise as Add Items when
-visible add-item rows exist. During a batch run, its label displays Loading or
-progress text. The chip is not the circular bubble described by older release notes.
+Dragging uses Pointer Events, clamps movement to the viewport, and persists the
+position in userscript storage. Arrow keys move it in 10 px steps. A long-press of
+350 ms opens settings; movement beyond 6 px suppresses both settings and tap actions.
+During a batch run the bubble displays `completed/total`; after an Add route completes,
+it turns pink (`#e8467c`) and shows the Material `check_circle` icon while every visible
+row has a positive price.
 
 ### Toasts
 
@@ -273,8 +277,8 @@ comparison-card component.
 - Icon controls have accessible labels, and the API-key eye toggle supports click,
   Enter, and Space.
 - Toasts use status/alert roles.
-- The chip grip is keyboard-operable with arrow keys.
-- The drag handle and action controls are 34 px or larger.
+- The circular bubble is keyboard-operable with arrow keys and activation keys.
+- The bubble and per-item controls provide touch targets of at least 34 px.
 
 ## Applying the theme to a new script
 
@@ -283,6 +287,6 @@ comparison-card component.
 2. Add a stable stylesheet element and remove stale styles and floating UI on startup
    so re-injection cannot duplicate controls. If using a remote font, inject it
    explicitly and document the third-party request.
-3. Keep z-index layering: floating chip `99998` < overlays `99999` < toasts `100000`.
+3. Keep z-index layering: floating bubble `99998` < overlays `99999` < toasts `100000`.
 4. Reuse the component vocabulary—modal shell, fields, note strips, number cells,
-   toggle rows, buttons, chip, and toasts—rather than inventing new patterns.
+   toggle rows, buttons, bubble, and toasts—rather than inventing new patterns.

@@ -4,7 +4,7 @@ A userscript for [Torn](https://www.torn.com) that fills your bazaar listings wi
 market-based prices in one click — per item or for the whole page — with configurable
 discounting, NPC-floor protection, and ranked-war weapon detection.
 
-**Current version: 2.9.3** — see the [CHANGELOG](CHANGELOG.md) for the release history.
+**Current version: 2.9.4** — see the [CHANGELOG](CHANGELOG.md) for the release history.
 
 ## Features
 
@@ -26,10 +26,13 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   flagged with a blinking rarity dot and skipped by batch runs, since their real
   value isn't the base item's market price. You can still price them manually after
   a confirmation.
-- **Floating chip** — a pill-shaped control chip that works on any Torn layout
-  (desktop or mobile). Its grip is draggable, its position is remembered and
-  clamped to the viewport, and the action button switches between Quick Fill and
-  Update All based on the bazaar section currently rendered.
+- **Route-aware circular bubble** — a 52 px floating bubble works on desktop and
+  Torn PDA. Tap it for the route action, drag it to reposition it (the position is
+  remembered and clamped), or long-press for 350 ms to open settings. Main shows
+  release notes, Add runs Quick Fill, Manage runs Update All, and Personalize hides
+  it. The Add bubble turns pink with a completion check when every visible row is
+  filled. Icons are inline Material 3 SVGs sourced from Google's official Material
+  Design Icons repository under Apache License 2.0.
 - **Rate-limit aware** — fresh cache entries are reused without a network request.
   Uncached item IDs are collected into bounded API v2 batches of up to 10, queued
   with 600 ms spacing to stay inside Torn's 100 requests/minute limit, deduplicated,
@@ -61,15 +64,15 @@ it needs. Don't paste a Full Access key into any third-party script.
 
 To create one: Torn → **Settings → API Keys → Create Key → Public**.
 
-You'll be prompted for the key on first run; you can change it later from the
-settings panel (gear icon on the floating chip). The key is stored locally in your
-userscript manager's storage and is sent only to `api.torn.com`. The current script
+You'll be prompted for the key on first run; you can change it later by long-pressing
+the floating bubble for 350 ms. The key is stored locally in your userscript manager's
+storage and is sent only to `api.torn.com`. The current script
 also loads the Nunito display font from Google Fonts; it does not send the API key
 to that service.
 
 ## Settings
 
-Open with the gear icon on the floating chip.
+Long-press the floating bubble for 350 ms.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |

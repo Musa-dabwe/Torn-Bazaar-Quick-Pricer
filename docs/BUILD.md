@@ -2,10 +2,17 @@
 
 ## Overview
 - **Purpose**: Userscript for filling and updating Torn bazaar listings with market-based prices.
-- **Current Version**: 2.9.3
-- **Status**: In active development; API v2 batching implemented and manually verified
+- **Current Version**: 2.9.4
+- **Status**: In active development; v2.9.4 Material 3 bubble release verified
 
 ## Development Timeline
+### 2026-09-25 — v2.9.4 Material 3 bubble release prepared
+Session: [session-2026-09-25-v2.9.4-material3-bubble.md](sessions/session-2026-09-25-v2.9.4-material3-bubble.md)
+Brief: Restored the route-aware circular bubble and long-press gestures, centralized
+reviewed Material 3 icons with source attribution, verified PDA initialization and
+no-focus dialogs, retained API v2 batching with v1 fallback, and aligned all current
+release metadata and documentation to v2.9.4.
+
 ### 2026-09-25 — API v2 batch pricing implemented
 Session: [session-2026-09-25-1148-api-v2-batch-pricing.md](sessions/session-2026-09-25-1148-api-v2-batch-pricing.md)
 Brief: Added cache-first 10-ID API v2 batches, 600 ms serialized spacing, v1 fallback,
@@ -21,9 +28,9 @@ setting, and aligned package metadata to v2.9.3.
 ## Architecture Overview
 - `torn-bazaar-quick-pricer.user.js`: single-file userscript with Torn API request queue,
   price cache, bazaar DOM observation, per-item controls, batch actions, settings modal,
-  toasts, and floating pill chip.
+  toasts, and route-aware circular bubble.
 - `tests/script.test.js`: Vitest/jsdom tests for pure helpers, settings, cache, pricing,
-  item parsing, and ranked-war detection.
+  item parsing, ranked-war detection, bubble behavior, PDA initialization, and dialogs.
 - `docs/pastel-theme.md`: reference for the current injected design system and UI
   components.
 
@@ -42,7 +49,7 @@ setting, and aligned package metadata to v2.9.3.
   whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit/integration testing: Vitest + jsdom, 67 tests.
+- Unit/integration testing: Vitest + jsdom, 136 tests.
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
 - Manual testing: passed. The user installed the local `test.txt` export and confirmed that
@@ -56,7 +63,7 @@ setting, and aligned package metadata to v2.9.3.
 
 ### Code Generation & Refactoring
 - **Space Bunny Free**: Implemented the request queue changes, tests, documentation, and
-  final review fixes. The userscript remains v2.9.3.
+  final review fixes. Task 3 aligned the userscript and package metadata to v2.9.4.
 
 ### Specific Implementations
 - None.

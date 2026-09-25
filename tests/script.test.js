@@ -88,6 +88,88 @@ describe('smoke', () => {
     });
 });
 
+describe('PDA initialization and dialog focus', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        window.location.hash = '';
+    });
+
+    it('checks for an existing bazaar root immediately', () => {
+        const root = document.createElement('div');
+        root.id = 'bazaarRoot';
+        document.body.appendChild(root);
+        const { QP } = loadScript({ tornApiKey: 'abcDEF1234567890' });
+
+        QP.init();
+
+        expect(document.querySelector('#bazaarRoot')).toBe(root);
+        expect(document.querySelector('.qp-bubble')).toBeTruthy();
+    });
+
+    it('registers a one-shot DOMContentLoaded fallback while the document is loading', () => {
+        vi.useFakeTimers();
+        const originalReadyState = document.readyState;
+        Object.defineProperty(document, 'readyState', { configurable: true, value: 'loading' });
+        const addEventListener = vi.spyOn(document, 'addEventListener').mockImplementation((type, listener, options) => {
+            if (type !== 'DOMContentLoaded') {
+                window.EventTarget.prototype.addEventListener.call(document, type, listener, options);
+            }
+        });
+        try {
+            const { QP } = loadScript();
+
+            QP.init();
+
+            expect(addEventListener).toHaveBeenCalledWith('DOMContentLoaded', expect.any(Function), { once: true });
+        } finally {
+            Object.defineProperty(document, 'readyState', { configurable: true, value: originalReadyState });
+            addEventListener.mockRestore();
+            vi.advanceTimersByTime(20000);
+            vi.useRealTimers();
+        }
+    });
+
+    it('bounds observer and polling cleanup to the root-search timeout', () => {
+        vi.useFakeTimers();
+        const observers = [];
+        const OriginalMutationObserver = globalThis.MutationObserver;
+        class TrackedMutationObserver {
+            constructor(callback) {
+                this.callback = callback;
+                this.disconnect = vi.fn();
+                observers.push(this);
+            }
+            observe() {}
+        }
+        globalThis.MutationObserver = TrackedMutationObserver;
+        try {
+            const { QP } = loadScript();
+            QP.init();
+            expect(observers).toHaveLength(1);
+
+            vi.advanceTimersByTime(20000);
+
+            expect(observers[0].disconnect).toHaveBeenCalledTimes(1);
+            expect(vi.getTimerCount()).toBe(0);
+        } finally {
+            globalThis.MutationObserver = OriginalMutationObserver;
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not focus the API input when the key prompt opens', () => {
+        const previous = document.activeElement;
+        const { QP } = loadScript();
+
+        QP.showApiKeyPrompt();
+
+        const input = document.querySelector('#qpApiKey');
+        expect(input).toBeTruthy();
+        expect(document.activeElement).toBe(previous);
+        expect(document.activeElement).not.toBe(input);
+    });
+});
+
 describe('isValidApiKey', () => {
     const { QP } = loadScript();
     it('accepts exactly 16 alphanumeric characters', () => {

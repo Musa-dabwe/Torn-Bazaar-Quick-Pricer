@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.9.3
+// @version      2.9.4
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -26,7 +26,7 @@
         return;
     }
 
-    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.3';
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.4';
 
     const CHANGELOG = Object.freeze([{
         version: '2.9.4',
@@ -2020,7 +2020,7 @@
 
         // Stage 1: DOMContentLoaded listener
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', checkForBazaar);
+            document.addEventListener('DOMContentLoaded', checkForBazaar, { once: true });
         }
     }
 
@@ -2057,9 +2057,12 @@
             setBubbleBusy,
             updateBubbleProgress,
             createFloatingBubble,
+            showApiKeyPrompt,
             showChangelog,
             showSettingsPanel,
-            fillAllItems
+            fillAllItems,
+            checkForBazaar,
+            init
         };
         return;
     }

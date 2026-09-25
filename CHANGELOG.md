@@ -1,22 +1,32 @@
 # Changelog
 
 The userscript metadata in `torn-bazaar-quick-pricer.user.js` currently declares
-**version 2.9.3**. The project package metadata is kept at the same version. Releases
-should be tagged (`v2.9.3`, …) and published as GitHub Releases when merged to `main`,
+**version 2.9.4**. The project package metadata is kept at the same version. Releases
+should be tagged (`v2.9.4`, …) and published as GitHub Releases when merged to `main`,
 so users can diff versions and roll back easily.
 
-## Unreleased
+## 2.9.4 — 2026-09-25
 
-Unreleased source work; **2.9.3 remains the current version**. No new release is
-claimed by this entry.
-
-- Fresh cache entries are still served without a network request. Uncached item IDs
-  are coalesced into cache-first API v2 price lookup batches of up to 10.
-- Requests remain serialized and spaced by 600 ms. Successful v2 values use the
-  existing cache and pricing path; API v2 is limited to public item price lookup.
-- If a v2 batch returns no usable expected-schema items, the entire batch falls back
-  to the existing per-item v1 lookup path. Mixed batches retain valid v2 items and
-  fail only malformed items.
+- **API v2 batching:** fresh cache entries remain local; uncached item IDs are grouped
+  into requests of at most 10, serialized 600 ms apart to respect Torn's rate limit.
+- **Conservative fallback:** a malformed or unusable v2 schema fails the whole batch
+  over to the existing per-item API v1 path. Valid items in mixed responses are kept,
+  while malformed items fail independently.
+- **Circular route-aware bubble:** the former pill chip is now a draggable 52 px
+  circular bubble. Tap runs the action for Main, Add, or Manage; long-pressing for
+  350 ms opens settings; Personalize hides the bubble. A complete Add route turns the
+  bubble pink with a check icon.
+- **Material 3 icons:** inline SVG paths come from Google's official Material Design
+  Icons repository and are distributed under Apache License 2.0. The single-file
+  userscript makes no runtime icon-font request.
+- **PDA initialization:** immediate root detection, a one-shot DOMContentLoaded
+  fallback, bounded observer/poll cleanup, and a 20-second timeout cover delayed
+  Torn PDA rendering. API prompt, settings, and changelog dialogs do not force focus
+  into the API-key field.
+- **Changelog modal:** the Main-route bubble opens the local v2.9.4 release notes;
+  scrim and Escape both close the dialog.
+- **Manual verification:** the installed userscript was exercised on the real batch
+  path and rows filled in groups of 10, matching the API v2 batching behavior.
 
 ## 2.9.3 — 2026-07-12
 
