@@ -30,9 +30,13 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   (desktop or mobile). Its grip is draggable, its position is remembered and
   clamped to the viewport, and the action button switches between Quick Fill and
   Update All based on the bazaar section currently rendered.
-- **Rate-limit aware** — API requests are queued, spaced to stay inside Torn's
-  100 requests/minute limit, deduplicated, cached, and retried with backoff when
-  rate-limited.
+- **Rate-limit aware** — fresh cache entries are reused without a network request.
+  Uncached item IDs are collected into bounded API v2 batches of up to 10, queued
+  with 600 ms spacing to stay inside Torn's 100 requests/minute limit, deduplicated,
+  cached, and retried with backoff when rate-limited. If a v2 batch has no usable
+  expected-schema items, the whole batch falls back to the existing per-item v1
+  path. The v2 migration is limited to public price lookup; it does not convert the
+  rest of the script.
 
 ## Installation
 

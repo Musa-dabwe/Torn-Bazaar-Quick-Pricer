@@ -56,3 +56,21 @@ The script does not ask Torn for the user's item count. It must inspect each vis
 2. Add unit tests for URL construction, response normalization, cache population, callback resolution, and v1 fallback.
 3. Run lint and tests, then manually validate a real Public-key v2 request before publishing.
 4. Update documentation only after behavior is verified.
+
+## Implementation Status
+- Implemented and unit-tested: fresh cache entries are served locally; cache misses enter the existing serial queue and are coalesced into API v2 batches of up to 10 item IDs.
+- Successful v2 values are normalized to the existing cache shape and written through the existing cache path. The queue retains its 600 ms spacing between every request, including v1 fallback requests.
+- If the v2 response has no usable expected-schema items, the whole batch falls back to the existing per-item v1 path. A mixed response keeps valid items and fails only malformed items.
+- The API v2 migration is limited to public price lookup. Pricing, quantity handling, DOM updates, cache storage, and key handling remain unchanged.
+- No userscript version bump was made: version 2.9.3 remains current.
+
+## Batch Size and URL-Length Rationale
+- The selected maximum is **10 item IDs per v2 request**. This materially reduces cold-cache request count while keeping each URL bounded and the queue serial. A unit test also asserts that a 10-ID URL remains below 2,000 characters.
+- A representative URL using IDs 1 through 10 and a 16-character dummy key is 76 characters. Using current-style four-digit IDs 3770 through 3779 is 77 characters, leaving substantial margin below the tested 2,000-character ceiling.
+- The key is included only to describe URL length with a dummy value. No real API key was requested, used, or recorded.
+
+## Live Smoke-Test Status
+- **Blocked / not run:** this environment has no user-provided Public key and no live userscript session in which to perform the required normal-path test. No production response was observed, so no live verification is claimed.
+- The implementation is based on the OpenAPI shape `items[]`, with each expected item containing numeric `id` and `value.market_price`; `value.sell_price` may be numeric or `null` and is normalized to zero when null. This remains an OpenAPI-derived expectation, not an observed live payload.
+- Before release, a Public-key smoke test must confirm that a multi-ID v2 response has an `items` array, every valid item's `value.market_price` is numeric, and each `value.sell_price` is numeric or `null`. It must also confirm that the userscript caches each valid result and fills the corresponding loaded rows.
+- No deviation from the OpenAPI schema has been observed because no live payload was available. If the live field names differ, the parser must be updated before release; the tested v1 fallback is the temporary protection.

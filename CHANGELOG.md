@@ -5,6 +5,19 @@ The userscript metadata in `torn-bazaar-quick-pricer.user.js` currently declares
 should be tagged (`v2.9.3`, …) and published as GitHub Releases when merged to `main`,
 so users can diff versions and roll back easily.
 
+## Unreleased
+
+Unreleased source work; **2.9.3 remains the current version**. No new release is
+claimed by this entry.
+
+- Fresh cache entries are still served without a network request. Uncached item IDs
+  are coalesced into cache-first API v2 price lookup batches of up to 10.
+- Requests remain serialized and spaced by 600 ms. Successful v2 values use the
+  existing cache and pricing path; API v2 is limited to public item price lookup.
+- If a v2 batch returns no usable expected-schema items, the entire batch falls back
+  to the existing per-item v1 lookup path. Mixed batches retain valid v2 items and
+  fail only malformed items.
+
 ## 2.9.3 — 2026-07-12
 
 Restores above-market pricing (driven by tester feedback — a negative discount used to
