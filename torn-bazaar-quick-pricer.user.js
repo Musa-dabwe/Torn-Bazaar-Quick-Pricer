@@ -994,7 +994,13 @@
     function finishRequest(itemId, result) {
         const callbacks = pendingRequests.get(itemId) || [];
         pendingRequests.delete(itemId);
-        callbacks.forEach(cb => cb(result));
+        callbacks.forEach(callback => {
+            try {
+                callback(result);
+            } catch (error) {
+                console.error(`[BazaarQuickPricer] Price callback error for item ${itemId}:`, error);
+            }
+        });
     }
 
     function failAllPending() {

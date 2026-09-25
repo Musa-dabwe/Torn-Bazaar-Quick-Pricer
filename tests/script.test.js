@@ -336,6 +336,88 @@ describe('API v2 request queue integration', () => {
         }
     });
 
+    it('isolates callback errors and resolves every callback exactly once', async () => {
+        vi.useFakeTimers();
+        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+        try {
+            const { QP, requests } = setup();
+            const second = vi.fn();
+            QP.fetchItemData(206, () => { throw new Error('first callback failed'); });
+            QP.fetchItemData(206, second);
+            await startQueue();
+
+            requests[0].onload({ responseText: JSON.stringify({ items: [
+                { id: 206, value: { market_price: 100, sell_price: 90 } }
+            ] }) });
+            await vi.advanceTimersByTimeAsync(600);
+
+            expect(second).toHaveBeenCalledTimes(1);
+            expect(second).toHaveBeenCalledWith({ marketValue: 100, sellPrice: 90 });
+            expect(requests).toHaveLength(1);
+            expect(consoleError).toHaveBeenCalledWith(
+                '[BazaarQuickPricer] Price callback error for item 206:',
+                expect.any(Error)
+            );
+            expect(consoleError).not.toHaveBeenCalledWith(
+                '[BazaarQuickPricer] Parse error:',
+                expect.anything()
+            );
+        } finally {
+            consoleError.mockRestore();
+            vi.useRealTimers();
+        }
+    });
+
+    it('splits 11 uncached IDs into a 10-ID batch and a 1-ID remainder', async () => {
+        vi.useFakeTimers();
+        try {
+            const { QP, requests } = setup();
+            const itemIds = Array.from({ length: 11 }, (_, i) => i + 1);
+            const results = [];
+            itemIds.forEach(itemId => QP.fetchItemData(itemId, result => results.push([itemId, result])));
+            await startQueue();
+
+            expect(requests).toHaveLength(1);
+            expect(requests[0].url).toBe(
+                `https://api.torn.com/v2/torn/${itemIds.slice(0, 10).join(',')}/items?key=${apiKey}`
+            );
+            requests[0].onload({ responseText: JSON.stringify({ items: itemIds.slice(0, 10).map(id => ({
+                id,
+                value: { market_price: id * 10, sell_price: id * 9 }
+            })) }) });
+            await vi.advanceTimersByTimeAsync(600);
+
+            expect(requests).toHaveLength(2);
+            expect(requests[1].url).toBe(
+                `https://api.torn.com/v2/torn/${itemIds[10]}/items?key=${apiKey}`
+            );
+            requests[1].onload({ responseText: JSON.stringify({ items: [
+                { id: 11, value: { market_price: 110, sell_price: 99 } }
+            ] }) });
+            await startQueue();
+
+            expect(results).toHaveLength(11);
+            expect(results.at(-1)).toEqual([11, { marketValue: 110, sellPrice: 99 }]);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('makes no request when all requested prices are fresh in cache', async () => {
+        const requests = [];
+        const freshCache = {
+            206: { marketValue: 100, sellPrice: 90, timestamp: Date.now() }
+        };
+        const { QP } = loadScript({ tornApiKey: apiKey, priceCache: freshCache }, options => requests.push(options));
+        const result = vi.fn();
+
+        QP.fetchItemData(206, result);
+
+        expect(requests).toHaveLength(0);
+        expect(result).toHaveBeenCalledTimes(1);
+        expect(result).toHaveBeenCalledWith({ marketValue: 100, sellPrice: 90 });
+    });
+
     it('reuses values cached by a v2 batch', async () => {
         vi.useFakeTimers();
         try {
@@ -480,14 +562,18 @@ describe('API v2 request queue integration', () => {
         }
     });
 
-    it('does not fall back to v1 after a fatal v2 API error', async () => {
+    it.each([
+        [2, 'bad key'],
+        [8, 'IP blocked'],
+        [9, 'API disabled']
+    ])('does not fall back to v1 after fatal v2 API error %i', async (code, message) => {
         vi.useFakeTimers();
         try {
             const { QP, requests } = setup();
             const result = vi.fn();
             QP.fetchItemData(206, result);
             await startQueue();
-            requests[0].onload({ responseText: JSON.stringify({ error: { code: 2, error: 'bad key' } }) });
+            requests[0].onload({ responseText: JSON.stringify({ error: { code, error: message } }) });
             await startQueue();
             expect(requests).toHaveLength(1);
             expect(result).toHaveBeenCalledWith({ marketValue: 0, sellPrice: 0 });

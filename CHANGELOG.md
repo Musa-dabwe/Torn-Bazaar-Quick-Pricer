@@ -101,8 +101,10 @@ Implementation of the v2.8.9 code audit.
   and keyboard chip repositioning with arrow keys.
 
 ### Security and privacy
-- The current source uses Torn API v1 with the key in the query string; migration to API
-  v2 with an `Authorization` header remains deferred.
+- In the historical 2.9 release, the source used Torn API v1 with the key in the query
+  string; migration to API v2 with an `Authorization` header remained deferred. The
+  current Unreleased source uses cache-first API v2 price lookup with the existing v1
+  path as a fallback.
 - The current source injects a Nunito stylesheet from `fonts.googleapis.com`. The
   script does not send the API key to Google, but the font request is still a
   third-party network request.
@@ -115,10 +117,10 @@ Implementation of the v2.8.9 code audit.
 - The repository includes ESLint, a Vitest + jsdom suite, and a GitHub Actions CI
   workflow.
 
-### Deferred
-- Migration to Torn API v2 with the key in an `Authorization` header is deferred: it
-  cannot be safely verified without live API access. The script still uses the v1
-  endpoint with the key in the query string.
+### Deferred in the historical 2.9 release
+- The 2.9 release deferred a full migration to Torn API v2 because it could not be
+  safely verified without live API access. Current Unreleased source performs cache-first
+  v2 price lookup in batches and retains the v1 endpoint as a fallback.
 
 ## 2.8.9
 
