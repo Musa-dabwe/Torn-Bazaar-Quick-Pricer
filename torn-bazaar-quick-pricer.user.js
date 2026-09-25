@@ -953,14 +953,15 @@
             if (!requested.has(itemId)) continue;
             const value = item?.value;
             const hasExpectedSchema = value && typeof value === 'object' &&
-                typeof value.market_price === 'number' && Number.isFinite(value.market_price);
+                typeof value.market_price === 'number' && Number.isFinite(value.market_price) &&
+                Object.prototype.hasOwnProperty.call(value, 'sell_price') &&
+                (value.sell_price === null ||
+                    (typeof value.sell_price === 'number' && Number.isFinite(value.sell_price)));
             if (!hasExpectedSchema) continue;
 
             values[itemId] = {
                 marketValue: value.market_price,
-                sellPrice: typeof value.sell_price === 'number' && Number.isFinite(value.sell_price)
-                    ? value.sell_price
-                    : 0
+                sellPrice: value.sell_price ?? 0
             };
             parsedIds.push(itemId);
         }

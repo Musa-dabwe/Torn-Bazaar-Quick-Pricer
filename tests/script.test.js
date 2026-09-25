@@ -278,12 +278,23 @@ describe('API v2 adapters', () => {
         expect(result.parsedIds).toEqual([206]);
     });
 
-    it('does not count an item without the expected schema as parsed', () => {
+    it.each([
+        { value: { market_price: 830000 }, case: 'missing sell_price' },
+        { value: { market_price: 830000, sell_price: '750000' }, case: 'nonnumeric sell_price' },
+        { value: { sell_price: 750000 }, case: 'missing market_price' }
+    ])('does not parse an item with an invalid schema: $case', ({ value }) => {
         const result = QP.parseV2ItemsResponse({
-            items: [{ id: 206, value: { sell_price: 750000 } }]
+            items: [{ id: 206, value }]
         }, [206]);
         expect(result.values).toEqual({});
         expect(result.parsedIds).toEqual([]);
+    });
+
+    it.each([0, 750000])('preserves numeric sell_price %i', sellPrice => {
+        const result = QP.parseV2ItemsResponse({
+            items: [{ id: 206, value: { market_price: 830000, sell_price: sellPrice } }]
+        }, [206]);
+        expect(result.values[206]).toEqual({ marketValue: 830000, sellPrice });
     });
 });
 
