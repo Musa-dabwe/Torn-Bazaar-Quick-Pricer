@@ -972,6 +972,7 @@
     let isProcessingQueue = false;
     let queueHalted = false;            // set when a fatal API error stops the run
     let requestQueueTimer = null;
+    let nextRequestAt = 0;
 
     const REQUEST_SPACING_MS = 600;         // ≤100 req/min, Torn's documented limit
     const REQUEST_TIMEOUT_MS = 15000;
@@ -1005,11 +1006,16 @@
     function processRequestQueue() {
         if (isProcessingQueue || requestQueue.length === 0) return;
         if (queueHalted) { failAllPending(); return; }
+        if (Date.now() < nextRequestAt) {
+            scheduleRequestQueue();
+            return;
+        }
         isProcessingQueue = true;
 
         const releaseAndContinue = (delay) => {
             isProcessingQueue = false;
-            setTimeout(processRequestQueue, delay);
+            nextRequestAt = Date.now() + delay;
+            scheduleRequestQueue(delay);
         };
         const fallbackToV1 = (itemIds, delay = REQUEST_SPACING_MS) => {
             requestQueue.unshift(...itemIds.map(itemId => ({ type: 'v1', itemIds: [itemId], retries: 0 })));
@@ -1131,12 +1137,13 @@
         });
     }
 
-    function scheduleRequestQueue() {
+    function scheduleRequestQueue(delay = 0) {
         if (requestQueueTimer !== null) return;
+        const wait = Math.max(delay, nextRequestAt - Date.now());
         requestQueueTimer = setTimeout(() => {
             requestQueueTimer = null;
             processRequestQueue();
-        }, 0);
+        }, wait);
     }
 
     /**

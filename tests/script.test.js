@@ -367,19 +367,103 @@ describe('API v2 request queue integration', () => {
         }
     });
 
-    it('falls back to v1 when a non-empty v2 response has no parseable items', async () => {
+    it('falls back to v1 for every item in a malformed v2 batch', async () => {
         vi.useFakeTimers();
         try {
             const { QP, requests } = setup();
             const results = [];
-            QP.fetchItemData(206, result => results.push([206, result]));
-            QP.fetchItemData(207, result => results.push([207, result]));
+            const first = vi.fn();
+            const second = vi.fn();
+            QP.fetchItemData(206, result => { first(result); results.push([206, result]); });
+            QP.fetchItemData(207, result => { second(result); results.push([207, result]); });
             await startQueue();
             requests[0].onload({ responseText: JSON.stringify({ items: [{ id: 206 }, { id: 207 }] }) });
             await vi.advanceTimersByTimeAsync(600);
             expect(requests).toHaveLength(2);
             expect(requests[1].url).toBe(`https://api.torn.com/torn/206?selections=items&key=${apiKey}`);
-            expect(QP.getCachedPrice(206)).toBe(null);
+            requests[1].onload({ responseText: JSON.stringify({ items: { 206: { market_value: 11, sell_price: 10 } } }) });
+            await vi.advanceTimersByTimeAsync(600);
+            expect(requests).toHaveLength(3);
+            expect(requests[2].url).toBe(`https://api.torn.com/torn/207?selections=items&key=${apiKey}`);
+            requests[2].onload({ responseText: JSON.stringify({ items: { 207: { market_value: 22, sell_price: 20 } } }) });
+            await startQueue();
+            expect(results).toEqual([
+                [206, { marketValue: 11, sellPrice: 10 }],
+                [207, { marketValue: 22, sellPrice: 20 }]
+            ]);
+            expect(first).toHaveBeenCalledTimes(1);
+            expect(second).toHaveBeenCalledTimes(1);
+            expect(QP.getCachedPrice(206)).toEqual({ marketValue: 11, sellPrice: 10, timestamp: expect.any(Number) });
+            expect(QP.getCachedPrice(207)).toEqual({ marketValue: 22, sellPrice: 20, timestamp: expect.any(Number) });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('does not start a new request before the 600 ms spacing window ends', async () => {
+        vi.useFakeTimers();
+        try {
+            const { QP, requests } = setup();
+            QP.fetchItemData(206, vi.fn());
+            await startQueue();
+            requests[0].onload({ responseText: JSON.stringify({ items: [
+                { id: 206, value: { market_price: 100, sell_price: 90 } }
+            ] }) });
+            QP.fetchItemData(207, vi.fn());
+            await startQueue();
+            expect(requests).toHaveLength(1);
+            await vi.advanceTimersByTimeAsync(599);
+            expect(requests).toHaveLength(1);
+            await vi.advanceTimersByTimeAsync(1);
+            expect(requests).toHaveLength(2);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('retries code 5 twice, then falls back to v1 once', async () => {
+        vi.useFakeTimers();
+        try {
+            const { QP, requests } = setup();
+            const result = vi.fn();
+            QP.fetchItemData(206, result);
+            await startQueue();
+            for (let attempt = 0; attempt < 3; attempt++) {
+                requests[attempt].onload({ responseText: JSON.stringify({ error: { code: 5, error: 'rate limited' } }) });
+                if (attempt < 2) {
+                    await vi.advanceTimersByTimeAsync(5000);
+                    expect(requests).toHaveLength(attempt + 2);
+                }
+            }
+            await vi.advanceTimersByTimeAsync(600);
+            expect(requests).toHaveLength(4);
+            expect(requests[3].url).toBe(`https://api.torn.com/torn/206?selections=items&key=${apiKey}`);
+            requests[3].onload({ responseText: JSON.stringify({ items: { 206: { market_value: 42, sell_price: 40 } } }) });
+            await startQueue();
+            expect(result).toHaveBeenCalledTimes(1);
+            expect(result).toHaveBeenCalledWith({ marketValue: 42, sellPrice: 40 });
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it.each(['onerror', 'ontimeout', 'onabort'])('falls back once on v2 %s', async eventName => {
+        vi.useFakeTimers();
+        try {
+            const { QP, requests } = setup();
+            const result = vi.fn();
+            QP.fetchItemData(206, result);
+            await startQueue();
+            requests[0][eventName]();
+            requests[0][eventName]();
+            await vi.advanceTimersByTimeAsync(600);
+            expect(requests).toHaveLength(2);
+            expect(requests[1].url).toBe(`https://api.torn.com/torn/206?selections=items&key=${apiKey}`);
+            expect(result).not.toHaveBeenCalled();
+            requests[1].onload({ responseText: JSON.stringify({ items: { 206: { market_value: 42, sell_price: 40 } } }) });
+            await startQueue();
+            expect(result).toHaveBeenCalledTimes(1);
+            expect(result).toHaveBeenCalledWith({ marketValue: 42, sellPrice: 40 });
         } finally {
             vi.useRealTimers();
         }
