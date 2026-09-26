@@ -112,12 +112,16 @@ setting, and aligned package metadata to v2.9.3.
   whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit/integration testing: Vitest + jsdom, 197 tests (all passing).
+- Unit/integration testing: Vitest + jsdom, 199 tests (all passing).
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
-- Manual testing: API v2 batching/manual verification passed: the user installed the
-  local `test.txt` export and confirmed the real userscript fills rows in batches of 10;
-  a direct API check also confirmed the v2 field shape. The final live desktop/PDA smoke
+- Manual testing: API v2 batching/manual verification passed. Historical note only: at
+  the time of that v2 verification the user installed a local export of the userscript
+  (referred to in session notes as `test.txt`) and confirmed the real userscript fills
+  rows in batches of 10; a direct API check also confirmed the v2 field shape. No
+  `test.txt` file exists in this repository, and nothing is currently exported — the
+  only artifact is the tracked `torn-bazaar-quick-pricer.user.js` source.
+  The final live desktop/PDA smoke
   test remains pending and is a release gate. The v2.9.4 bubble follow-up
   (route restriction, Fill/clear states, changelog gate, settings info action) and the
   clear-state/overlay fixes (category reset, complete clear, Settings kept open beneath

@@ -1672,6 +1672,57 @@ describe('clearAllQuantities', () => {
         expect(bubble.textContent).toBe('Fill');
     });
 
+    it('resets a cleared row\'s quick-price button out of undo mode', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        const filled = addQuantityRow({ price: '750', quantity: '5' });
+        const other = addQuantityRow({ price: '90', quantity: '3' });
+        // Both rows look filled: red undo icon, undo tooltip, mode=undo.
+        [filled, other].forEach(row => {
+            const wrap = document.createElement('div');
+            wrap.className = 'quick-price-btn';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'qp-item-btn qp-btn-red';
+            btn.dataset.mode = 'undo';
+            btn.title = 'Undo Quick Fill';
+            btn.setAttribute('aria-label', btn.title);
+            wrap.appendChild(btn);
+            row.item.appendChild(wrap);
+        });
+
+        QP.clearAllQuantities();
+
+        [filled, other].forEach(row => {
+            const btn = row.item.querySelector('.quick-price-btn button');
+            expect(btn.dataset.mode).toBe('add');
+            expect(btn.classList.contains('qp-btn-red')).toBe(false);
+            expect(btn.title).toBe('Quick Add / Undo');
+            expect(btn.getAttribute('aria-label')).toBe('Quick Add / Undo');
+            expect(btn.innerHTML).toBe(iconHtml(QP, 'add'));
+        });
+    });
+
+    it('leaves an untouched row\'s quick-price button alone', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        const empty = addQuantityRow({ price: '', quantity: '' });
+        const wrap = document.createElement('div');
+        wrap.className = 'quick-price-btn';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'qp-item-btn qp-btn-red';
+        btn.dataset.mode = 'undo';
+        btn.title = 'Undo Quick Fill';
+        wrap.appendChild(btn);
+        empty.item.appendChild(wrap);
+
+        // The row is in undo mode but holds nothing to clear, so nothing about it
+        // is reported as cleared and its button is left as-is.
+        expect(QP.clearAllQuantities()).toBe(0);
+        expect(btn.dataset.mode).toBe('undo');
+        expect(btn.classList.contains('qp-btn-red')).toBe(true);
+        expect(btn.title).toBe('Undo Quick Fill');
+    });
+
     it('falls back to the fill mode for an unknown mode value', () => {
         const { QP } = mountBubble();
         QP.setBubbleMode('clear');

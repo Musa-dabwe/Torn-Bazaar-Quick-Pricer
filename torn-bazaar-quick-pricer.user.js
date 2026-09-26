@@ -1432,6 +1432,26 @@
     }
 
     /**
+     * Put a row's quick-price button back into its un-filled 'add' mode: drop the
+     * red undo styling and icon, and restore the row's normal tooltip, which
+     * differs for RW weapons. Both clear paths go through this so a row that was
+     * cleared by hand and a row cleared by Clear All end up looking identical.
+     * @param {Element} itemElement
+     * @param {Element} [btn] the button, when the caller already holds a reference
+     */
+    function resetItemButtonToAddMode(itemElement, btn = itemElement.querySelector('.quick-price-btn button')) {
+        if (!btn) return;
+        const rwInfo = getRWBonusInfo(itemElement);
+        btn.classList.remove('qp-btn-red');
+        btn.dataset.mode = 'add';
+        btn.innerHTML = getMaterialIcon('add');
+        btn.title = rwInfo.isRanked
+            ? `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`
+            : 'Quick Add / Undo';
+        btn.setAttribute('aria-label', btn.title);
+    }
+
+    /**
      * Clear the price and quantity controls of every currently loaded add-items
      * row. Only rows in getVisibleItems() are affected — the page lazy-loads the
      * rest, so anything not rendered cannot be cleared.
@@ -1445,6 +1465,10 @@
             if (cleared > 0) {
                 rows++;
                 fields += cleared;
+                // A filled row sits in undo mode; clearing its fields without
+                // resetting the button would leave it offering to undo a fill
+                // that is no longer there.
+                resetItemButtonToAddMode(item);
             }
         });
         setBubbleMode('fill');
@@ -2112,13 +2136,7 @@
             event.stopPropagation();
             if (btnInput.dataset.mode === 'undo') {
                 clearItemInputs(itemElement);
-                btnInput.classList.remove('qp-btn-red');
-                btnInput.dataset.mode = 'add';
-                btnInput.innerHTML = getMaterialIcon('add');
-                btnInput.title = rwInfo.isRanked
-                    ? `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`
-                    : 'Quick Add / Undo';
-                btnInput.setAttribute('aria-label', btnInput.title);
+                resetItemButtonToAddMode(itemElement, btnInput);
                 return;
             }
             if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
