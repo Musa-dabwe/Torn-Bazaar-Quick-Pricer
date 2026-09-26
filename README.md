@@ -33,11 +33,14 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   action, drag it to reposition it (the position is remembered and clamped), or
   long-press for 350 ms to open settings from either supported route.
   - **Add items:** the bubble reads **Fill**; tapping it runs Quick Fill. Once the
-    batch settles the bubble switches to a `close` icon, and tapping that clears the
-    quantity of every currently loaded row (prices are left alone) and returns the
-    bubble to **Fill**. Only loaded rows are touched — Torn lazy-loads the rest, and
-    the script never scrolls for you, so scroll down and run again to cover more.
-    A route change always resets the bubble to **Fill**.
+    batch settles the bubble switches to a `close` icon, and tapping that clears both
+    the price and the quantity of every currently loaded row — the same clear a
+    manual queue removal performs, so no stale price or leftover quantity is left
+    behind — and returns the bubble to **Fill**. Only loaded rows are touched — Torn
+    lazy-loads the rest, and the script never scrolls for you, so scroll down and run
+    again to cover more. A route change — or switching the Add Items category — always
+    resets the bubble to **Fill**, so the clear action is never pointed at rows you can
+    no longer see.
   - **Manage bazaar:** the bubble shows a `refresh` icon; tapping it runs Update All.
   - If you navigate away from Add/Manage while a batch is still running, the bubble
     hides at once — including when that batch finishes. Coming back re-renders the
@@ -92,8 +95,11 @@ to that service.
 Long-press the floating bubble for 350 ms on the **Add items** or **Manage bazaar**
 route (the bubble is hidden elsewhere).
 
-The `info` button in the settings header opens the 2.9.4 release notes, which is
-also how you reopen them after the first automatic display.
+The `info` button in the settings header opens the 2.9.4 release notes **on top of**
+the settings panel, which is also how you reopen them after the first automatic
+display. The changelog owns the top position: its close button, scrim, and Escape all
+dismiss only the notes, leaving the settings panel open with your unsaved edits
+intact. Escape is only ever handled by the top-most dialog.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |

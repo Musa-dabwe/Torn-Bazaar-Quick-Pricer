@@ -157,17 +157,32 @@ A fixed full-screen scrim centers a white card that is 320 px wide, capped at
 ```
 
 In the settings panel the header badge is a real button (`.qp-head__badge--action`,
-`aria-label="What's new in Quick Pricer"`) rather than a decorative gear. It closes the
-panel and opens the changelog in its place, so the two dialogs never stack; Enter and
-Space are handled explicitly with `preventDefault` so activation stays single-shot. The
-footer **Clear cache** button is text-only, and the dead `.qp-btn svg` sizing rule was
-removed along with the unused `inventory_2` and `more_vert` icon map entries and assets.
-Header badges now hold only 22 px Material icons, so the per-variant `font-size: 16px`
-was dropped and each `--warn`/`--rw` variant is declared once instead of in two split
-rules.
+`aria-label="What's new in Quick Pricer"`) rather than a decorative gear. It opens the
+changelog *above* the settings panel instead of replacing it, so the two dialogs do
+stack; Enter and Space are handled explicitly with `preventDefault` so activation stays
+single-shot. The footer **Clear cache** button is text-only, and the dead `.qp-btn svg`
+sizing rule was removed along with the unused `inventory_2` and `more_vert` icon map
+entries and assets. Header badges now hold only 22 px Material icons, so the per-variant
+`font-size: 16px` was dropped and each `--warn`/`--rw` variant is declared once instead
+of in two split rules.
 
 The current script adds `role="dialog"`, `aria-modal="true"`, Escape-to-close, and a
 Tab focus trap to the modal. Clicking the scrim also closes the dialog.
+
+### Stacked dialogs
+
+Overlays share one `z-index: 99999`, so document order decides which one paints on
+top. Because the changelog is appended to `document.body` last, opening it from the
+settings header puts it above the settings panel. Each overlay keeps its own focus trap
+and its own close button, scrim, and Escape handler, and those handlers remove only
+their own overlay — dismissing the changelog reveals the settings panel with unsaved
+edits intact.
+
+Escape is scoped to the top-most overlay (`isTopOverlay`, i.e. the last `.qp-overlay`
+in the DOM) so a keystroke aimed at the top dialog can never close a dialog buried
+beneath it. The route-level first-Add changelog gate is unchanged and still refuses to
+open while any overlay is present, so automatic display never stacks onto the settings
+panel or the API-key prompt; only the deliberate settings info action stacks.
 
 ### Text field and API-key prompt
 
@@ -253,10 +268,14 @@ via `.qp-bubble-hidden` and performs no action:
   including while dragging. The drag branch deliberately never removes
   `.qp-bubble-hidden`, so no transient state can reveal it on an unsupported route.
 - After an Add batch settles, the bubble switches to the Material `close` icon
-  (`aria-label` `Clear quantities`) in the same accent color — there is no pink
-  completion state and no `check_circle` icon. Tapping it clears the quantity of every
-  currently loaded row, leaves prices untouched, and returns the bubble to **Fill**.
-  The state is in-memory only, so a reload or a route change starts again at **Fill**.
+  (`aria-label` `Clear prices and quantities`) in the same accent color — there is no
+  pink completion state and no `check_circle` icon. Tapping it clears the price *and*
+  quantity of every currently loaded row through the same per-item clear a manual
+  queue removal performs, and returns the bubble to **Fill**. The state is in-memory
+  only, so a reload, a route change, or a change of Add Items category starts again at
+  **Fill**; the category reset compares a signature of the leading loaded item IDs, so
+  a category lazy-loading more rows as the user scrolls keeps its Clear state while a
+  genuine category switch resets it.
 
 Dragging uses Pointer Events, clamps movement to the viewport, and persists the
 position in userscript storage. Arrow keys move it in 10 px steps. A long-press of
@@ -304,11 +323,13 @@ comparison-card component.
 ## Accessibility checklist
 
 - Dialogs have `role="dialog"` and `aria-modal="true"`, close on Escape, and trap Tab
-  focus.
+  focus. When two dialogs stack (the settings panel and the changelog above it),
+  Escape belongs to the top-most one only and each dialog's close button, scrim, and
+  Escape handler remove only their own overlay.
 - Icon controls have accessible labels, and the API-key eye toggle supports click,
   Enter, and Space. The bubble carries a per-state `aria-label` (`Quick Fill`,
-  `Clear quantities`, `Update all prices`), and the settings info action supports
-  click, Enter, and Space.
+  `Clear prices and quantities`, `Update all prices`), and the settings info action
+  supports click, Enter, and Space.
 - Toasts use status/alert roles.
 - The circular bubble is keyboard-operable with arrow keys and activation keys.
 - The bubble and per-item controls provide touch targets of at least 34 px.

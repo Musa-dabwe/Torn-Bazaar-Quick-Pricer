@@ -2107,16 +2107,85 @@ describe('v2.9.4 changelog order and settings info action', () => {
         ['click', target => target.click()],
         ['Enter', target => target.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))],
         ['Space', target => target.dispatchEvent(new window.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))]
-    ])('closes settings and opens the changelog on %s', (_label, activate) => {
+    ])('keeps the settings panel open beneath the changelog on %s', (_label, activate) => {
         const { QP } = loadScript();
         QP.showSettingsPanel();
         const settingsOverlay = document.querySelector('.qp-overlay');
         activate(settingsOverlay.querySelector('#qpSettingsInfo'));
 
-        expect(document.body.contains(settingsOverlay)).toBe(false);
+        // Settings survives the transition, and the changelog is appended last so
+        // it paints on top of the settings dialog.
+        expect(document.body.contains(settingsOverlay)).toBe(true);
+        const overlays = document.querySelectorAll('.qp-overlay');
+        expect(overlays).toHaveLength(2);
+        expect(overlays[0]).toBe(settingsOverlay);
+        expect(overlays[1].querySelector('.qp-head__title')?.textContent).toBe("What's new");
+        expect(overlays[1].querySelector('.qp-changelog__list li')?.textContent).toMatch(/clears the price and quantity of every listed item/i);
+    });
+
+    it.each([
+        ['close button', overlay => overlay.querySelector('#qpChangelogClose').click()],
+        ['scrim', overlay => overlay.click()],
+        ['Escape', overlay => overlay.querySelector('#qpChangelogClose').dispatchEvent(
+            new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))]
+    ])('closes only the changelog via its %s and leaves settings interactive', (_label, closeChangelog) => {
+        const { QP, storage } = loadScript();
+        QP.showSettingsPanel();
+        const settingsOverlay = document.querySelector('.qp-overlay');
+        settingsOverlay.querySelector('#qpSettingsInfo').click();
+
+        const changelogOverlay = document.querySelectorAll('.qp-overlay')[1];
+        closeChangelog(changelogOverlay);
+
+        // Only the changelog went away; the settings dialog is still live and the
+        // close counted as "seen" for this version.
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-overlay')).toBe(settingsOverlay);
+        expect(document.body.contains(settingsOverlay)).toBe(true);
+        expect(storage.changelogSeenVersion).toBe('2.9.4');
+
+        // Interactive: editing and saving still works, and saving closes settings.
+        const apiInput = settingsOverlay.querySelector('#qpApiKey');
+        apiInput.value = 'abcDEF1234567890';
+        settingsOverlay.querySelector('#qpSave').click();
+        expect(storage.tornApiKey).toBe('abcDEF1234567890');
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+    });
+
+    it('does not let the settings overlay close when Escape is pressed inside the changelog', () => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        const settingsOverlay = document.querySelector('.qp-overlay');
+        settingsOverlay.querySelector('#qpSettingsInfo').click();
+
+        const changelogOverlay = document.querySelectorAll('.qp-overlay')[1];
+        changelogOverlay.querySelector('#qpChangelogClose')
+            .dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-overlay')).toBe(settingsOverlay);
+    });
+
+    it('still refuses to stack the route-level first-Add changelog on top of open settings', () => {
+        window.location.hash = '#/add';
+        const { QP, storage } = mountBubble({ changelogSeenVersion: '2.9.3' });
+
+        QP.showSettingsPanel();
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+
+        // An Add-route visit with settings open must not add a second overlay, and
+        // the version must stay un-seen so the first unobstructed visit still shows it.
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-head__title')?.textContent).toBe('Quick Pricer settings');
+        expect(storage.changelogSeenVersion).toBe('2.9.3');
+
+        // Closing settings lets the gate through on the next route visit.
+        document.querySelector('#qpCancel').click();
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+        window.dispatchEvent(new window.HashChangeEvent('hashchange'));
         expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
         expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
-        expect(document.querySelector('.qp-changelog__list li')?.textContent).toMatch(/clears the price and quantity of every listed item/i);
     });
 
     it('keeps the Clear cache button text-only and reports its cleared state as text', () => {

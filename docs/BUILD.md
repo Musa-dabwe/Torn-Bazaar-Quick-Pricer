@@ -7,6 +7,19 @@
   verification completed; live desktop/PDA smoke test pending as a release gate
 
 ## Development Timeline
+### 2026-09-26 — v2.9.4 clear-state and overlay fixes
+Session: [session-2026-09-26-v2.9.4-clear-state-fixes.md](sessions/session-2026-09-26-v2.9.4-clear-state-fixes.md)
+Brief: Switching the Add Items category now returns the post-fill bubble to **Fill**
+(a session-local signature of the visible loaded item IDs drives the reset, so a
+lazy-loaded row appearing does not reset the user's state), the clear action now empties
+both price and quantity of every listed item through the existing per-item clear, and
+the settings info action opens the changelog **above** the still-open settings panel
+instead of replacing it. Escape belongs to the top-most overlay only, so dismissing the
+changelog never closes the dialog beneath it. The route-level first-Add changelog gate,
+its `changelogSeenVersion` persistence, API v2 batching, the v1 fallback, the version
+2.9.4, and all unrelated dialog behavior are unchanged; the live desktop/PDA smoke test
+is still a pending release gate.
+
 ### 2026-09-26 — v2.9.4 final review fix wave
 Session: [session-2026-09-26-v2.9.4-bubble-followup.md](sessions/session-2026-09-26-v2.9.4-bubble-followup.md)
 Brief: Closed the last whole-branch review findings. A running batch no longer leaves
@@ -64,6 +77,17 @@ setting, and aligned package metadata to v2.9.3.
   v2 response also confirmed the documented field shape for item IDs 206 and 207.
 
 ### Medium
+- The settings header info action removed the settings overlay before showing the
+  changelog, so reading the release notes discarded the user's unsaved settings edits
+  and the panel had to be reopened from scratch. Fixed by showing the changelog above
+  the panel and scoping Escape to the top-most overlay, so each dialog closes only
+  itself.
+- The post-fill clear action emptied only the quantity fields, leaving fetched prices
+  visible and still applicable to a re-fill. Fixed by routing clear-all through the
+  per-item clear so price and quantity both go.
+- The post-fill `clear` state survived an Add Items category change, offering to clear
+  rows that were no longer loaded. Fixed by resetting the bubble mode when the visible
+  loaded-item signature changes.
 - A running batch kept its progress bubble visible after the route changed to
   Personalize or the base route, because `renderBubbleContent()` returned early while
   busy. Fixed by resolving route visibility before the busy check, so an unsupported
@@ -87,15 +111,16 @@ setting, and aligned package metadata to v2.9.3.
   whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit/integration testing: Vitest + jsdom, 173 tests (all passing).
+- Unit/integration testing: Vitest + jsdom, 191 tests (all passing).
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
 - Manual testing: API v2 batching/manual verification passed: the user installed the
   local `test.txt` export and confirmed the real userscript fills rows in batches of 10;
   a direct API check also confirmed the v2 field shape. The final live desktop/PDA smoke
   test remains pending and is a release gate. The v2.9.4 bubble follow-up
-  (route restriction, Fill/clear states, changelog gate, settings info action) was
-  verified by unit tests only; the live desktop/PDA smoke test for the follow-up is
+  (route restriction, Fill/clear states, changelog gate, settings info action) and the
+  clear-state/overlay fixes (category reset, complete clear, Settings kept open beneath
+  the changelog) were verified by unit tests only; the live desktop/PDA smoke test is
   still pending and blocks release.
 
 ## AI Models & Their Contributions

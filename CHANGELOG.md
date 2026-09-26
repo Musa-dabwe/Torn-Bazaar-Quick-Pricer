@@ -15,17 +15,22 @@ so users can diff versions and roll back easily.
 - **Circular route-aware bubble:** the former pill chip is now a draggable 52 px
   circular Material 3 bubble. It is shown only on the **Add** and **Manage** routes;
   the base route and Personalize hide it. On Add the bubble reads **Fill**, and once
-  a fill finishes it switches to a `close` icon whose tap clears the quantity boxes of
-  the currently loaded rows before returning to **Fill**. On Manage it shows a refresh
+  a fill finishes it switches to a `close` icon whose tap clears the price *and*
+  quantity of every listed item — the same per-item clear a manual queue removal
+  performs, so no stale price or leftover quantity survives a clear. Changing the Add
+  Items category returns the bubble to **Fill** instead of leaving a stale clear
+  action pointed at rows the user can no longer see. On Manage it shows a refresh
   icon and returns to that state after Update All.
 - **Settings by long press:** long-pressing the bubble for 350 ms opens the settings
   panel from either supported route; dragging past the drag threshold shows the
   settings affordance inside the bubble and restores the route state on release.
 - **Settings panel:** the header badge is now a keyboard-accessible `info` button that
-  closes the panel and opens the changelog, and **Clear cache** is a text-only button
-  that still reports `Cleared ✓` for 1.5 seconds. Icons with no remaining consumer
-  (`inventory_2`, `more_vert`) were dropped from the map and from the provenance
-  assets, along with the now-dead `.qp-btn svg` styling rule.
+  opens the changelog **on top of** the still-open settings panel — dismissing the
+  changelog (scrim, close button, or Escape) reveals the interactive settings dialog
+  with unsaved edits intact. **Clear cache** is a text-only button that still reports
+  `Cleared ✓` for 1.5 seconds. Icons with no remaining consumer (`inventory_2`,
+  `more_vert`) were dropped from the map and from the provenance assets, along with the
+  now-dead `.qp-btn svg` styling rule.
 - **Material 3 icons:** inline SVG paths are Material Design assets reviewed from
   Google's official Material source and acquired from the documented Google Fonts CDN
   URLs. The assets README records the differing legacy serializations and Apache
@@ -37,6 +42,10 @@ so users can diff versions and roll back easily.
 - **Changelog modal:** these notes open once per version on the Add route — either
   automatically on the first Add visit or from the settings header info button at any
   time. Scrim, close button, and Escape all close the dialog and mark the version seen.
+  Because the two overlays can now be stacked, Escape belongs to the top-most dialog
+  only: pressing it with the changelog above the settings panel closes only the
+  changelog, and the automatic first-Add gate still refuses to open a second dialog
+  over an open settings panel or API-key prompt.
 - **Manual verification:** the installed userscript was exercised on the real batch
   path and rows filled in groups of 10, matching the API v2 batching behavior. The
   final live desktop/PDA smoke test remains pending as a release gate.

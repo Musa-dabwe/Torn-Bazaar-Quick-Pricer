@@ -36,7 +36,7 @@
         notes: Object.freeze([
             'The Add bubble fills prices, then switches to a close icon whose tap clears the price and quantity of every listed item, and switching Add category returns it to Fill.',
             'Long-press the bubble to open Settings from any supported view.',
-            'The info button in the Settings header opens the changelog.',
+            'The info button in the Settings header opens the changelog above the panel, so closing it leaves your settings edits alone.',
             'Clear cache is now a text-only button.',
             'Route-aware actions change the icon and action across the Add and Manage views, and the changelog now opens on the Add route.',
             'The floating control is now a circular Material 3 bubble that fits mobile and desktop layouts.',
@@ -664,13 +664,30 @@
         });
     }
 
+    /**
+     * True when `overlay` is the last `.qp-overlay` in the DOM, i.e. the one
+     * painted on top. Overlays share one z-index, so document order decides.
+     */
+    function isTopOverlay(overlay) {
+        const overlays = document.querySelectorAll('.qp-overlay');
+        return overlays.length > 0 && overlays[overlays.length - 1] === overlay;
+    }
+
     /** Dialog accessibility: role/aria attributes, Escape to close, Tab focus trap. */
     function wireOverlayA11y(overlay, onClose) {
         const modal = overlay.querySelector('.qp-modal');
         modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-modal', 'true');
         overlay.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
+            // Overlays can legitimately stack (Settings opening the changelog), so
+            // Escape belongs to the top-most one only. A buried dialog must never
+            // be closed by a keystroke aimed at the dialog above it.
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                if (isTopOverlay(overlay)) onClose();
+                return;
+            }
+
             if (e.key !== 'Tab') return;
             const focusables = overlay.querySelectorAll('button, input, a[href], [tabindex]:not([tabindex="-1"])');
             if (focusables.length === 0) return;
@@ -817,8 +834,10 @@
      * route: opening the changelog on an unsupported route would both show UI
      * where no bubble exists and mark the version seen, so the user would never
      * see it on the first real Add visit. Also skipped while another script
-     * overlay (e.g. the API-key prompt) is up, so the modals never stack; the
-     * dismissing prompt calls this again once it is gone.
+     * overlay (e.g. the API-key prompt or the Settings panel) is up, so the gate
+     * never stacks a second dialog; the dismissing prompt calls this again once
+     * it is gone. (The Settings info action deliberately stacks the changelog
+     * above the panel, but it does so through showChangelog, never this gate.)
      */
     function maybeShowChangelog() {
         if (getBubbleTab() !== 'add') return false;
@@ -831,6 +850,9 @@
     function showChangelog() {
         if (changelogOpen) return;
         changelogOpen = true;
+        // Appended last so, when it is opened on top of another overlay (the
+        // Settings info action), it paints above it and `isTopOverlay` gives it
+        // exclusive ownership of Escape.
         // Show the notes for the running version. Falling back to the newest
         // entry only covers a changelog that has not been given an entry for
         // this version yet; VERSION is what the gate keys on, so the modal must
@@ -1018,11 +1040,14 @@
         };
 
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
-        // The header info action replaces the settings panel with the changelog so
-        // the two dialogs never stack. Enter/Space are handled explicitly (with
-        // preventDefault) so activation stays single-shot in every browser.
+        // The header info action opens the changelog *on top of* the settings panel
+        // instead of replacing it: the user came here to read the notes, and
+        // dropping their unsaved edits on the floor was the surprise. The changelog
+        // is appended last, so it paints above and owns Escape; dismissing it
+        // reveals the still-interactive settings dialog. Enter/Space are handled
+        // explicitly (with preventDefault) so activation stays single-shot in every
+        // browser.
         const openChangelogFromSettings = () => {
-            overlay.remove();
             showChangelog();
         };
         const infoButton = overlay.querySelector('#qpSettingsInfo');
