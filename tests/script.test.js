@@ -2166,6 +2166,81 @@ describe('v2.9.4 changelog order and settings info action', () => {
         expect(document.querySelector('.qp-overlay')).toBe(settingsOverlay);
     });
 
+    it('ignores an Escape dispatched on the buried settings overlay while the changelog is on top', () => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        const settingsOverlay = document.querySelector('.qp-overlay');
+        settingsOverlay.querySelector('#qpSettingsInfo').click();
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(2);
+
+        // The event targets the settings dialog itself, so its own keydown listener
+        // runs. Only the top-most-overlay guard stops it from closing the dialog the
+        // user cannot even see.
+        settingsOverlay.querySelector('#qpCancel')
+            .dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+        expect(document.body.contains(settingsOverlay)).toBe(true);
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(2);
+        expect(document.querySelector('#qpChangelogClose')).toBeTruthy();
+    });
+
+    it.each([
+        ['close button', overlay => overlay.querySelector('#qpChangelogClose').click()],
+        ['scrim', overlay => overlay.click()],
+        ['Escape', overlay => overlay.querySelector('#qpChangelogClose').dispatchEvent(
+            new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))]
+    ])('returns focus to the settings info button when the changelog closes via its %s', (_label, closeChangelog) => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        const settingsOverlay = document.querySelector('.qp-overlay');
+        const infoButton = settingsOverlay.querySelector('#qpSettingsInfo');
+        // A real click focuses the button first; jsdom's .click() does not.
+        infoButton.focus();
+        infoButton.click();
+        expect(document.activeElement).toBe(document.querySelector('#qpChangelogClose'));
+
+        closeChangelog(document.querySelectorAll('.qp-overlay')[1]);
+
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
+        expect(document.querySelector('.qp-overlay')).toBe(settingsOverlay);
+        expect(infoButton.isConnected).toBe(true);
+        expect(document.activeElement).toBe(infoButton);
+    });
+
+    it('returns focus to the settings info button and then lets Escape close the settings overlay', () => {
+        const { QP } = loadScript();
+        QP.showSettingsPanel();
+        const settingsOverlay = document.querySelector('.qp-overlay');
+        const infoButton = settingsOverlay.querySelector('#qpSettingsInfo');
+        infoButton.focus();
+        infoButton.click();
+        document.querySelector('#qpChangelogClose').click();
+
+        // Focus is back on the trigger, so the dialog beneath is immediately usable:
+        // its own Escape now works, because it is the top-most overlay.
+        expect(document.activeElement).toBe(infoButton);
+        infoButton.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+    });
+
+    it('falls back safely when the element focused before the changelog is gone', () => {
+        const { QP } = loadScript();
+        const doomed = document.createElement('button');
+        document.body.appendChild(doomed);
+        doomed.focus();
+        expect(document.activeElement).toBe(doomed);
+
+        QP.showChangelog();
+        // The previously focused element disappears while the changelog is up.
+        doomed.remove();
+        const changelogOverlay = document.querySelector('.qp-overlay');
+        expect(() => changelogOverlay.querySelector('#qpChangelogClose').click()).not.toThrow();
+
+        expect(document.querySelectorAll('.qp-overlay')).toHaveLength(0);
+        expect(document.activeElement).not.toBe(changelogOverlay);
+        expect(document.activeElement).not.toBe(document.querySelector('#qpChangelogClose'));
+    });
+
     it('still refuses to stack the route-level first-Add changelog on top of open settings', () => {
         window.location.hash = '#/add';
         const { QP, storage } = mountBubble({ changelogSeenVersion: '2.9.3' });

@@ -81,7 +81,8 @@ setting, and aligned package metadata to v2.9.3.
   changelog, so reading the release notes discarded the user's unsaved settings edits
   and the panel had to be reopened from scratch. Fixed by showing the changelog above
   the panel and scoping Escape to the top-most overlay, so each dialog closes only
-  itself.
+  itself. Dismissing the changelog also returns focus to the info button that opened it,
+  so the keyboard is not stranded on the page body.
 - The post-fill clear action emptied only the quantity fields, leaving fetched prices
   visible and still applicable to a re-fill. Fixed by routing clear-all through the
   per-item clear so price and quantity both go.
@@ -111,7 +112,7 @@ setting, and aligned package metadata to v2.9.3.
   whole-batch v1 fallback; `sell_price` schema validation was tightened separately.
 
 ## Testing Methodology
-- Unit/integration testing: Vitest + jsdom, 191 tests (all passing).
+- Unit/integration testing: Vitest + jsdom, 197 tests (all passing).
 - Linting: ESLint flat configuration via `npm run lint`.
 - Documentation validation: `git diff --check` and source/documentation searches.
 - Manual testing: API v2 batching/manual verification passed: the user installed the

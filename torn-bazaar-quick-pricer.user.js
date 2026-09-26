@@ -897,12 +897,25 @@
         overlay.appendChild(modal);
         document.body.appendChild(overlay);
 
+        // Whatever had focus before this dialog opened is where the user will go
+        // back to when it closes. Captured before `closeButton.focus()` below, and
+        // for the settings info flow that is the still-mounted info button, so
+        // dismissing the changelog leaves the keyboard exactly where it was.
+        const previouslyFocused = document.activeElement;
+
         // Every close path (button, scrim, Escape) counts as "seen" so the
         // changelog is shown exactly once per version.
         const close = () => {
             changelogOpen = false;
             markChangelogSeen();
             overlay.remove();
+            // Only hand focus back to an element that is still in the document:
+            // the previous focus can be gone (removed with another dialog, or a
+            // node torn down mid-interaction), and focusing a detached node would
+            // silently drop focus to the body with no error to catch.
+            if (previouslyFocused && previouslyFocused.isConnected && typeof previouslyFocused.focus === 'function') {
+                previouslyFocused.focus();
+            }
         };
         closeButton.addEventListener('click', close);
         overlay.addEventListener('click', event => { if (event.target === overlay) close(); });

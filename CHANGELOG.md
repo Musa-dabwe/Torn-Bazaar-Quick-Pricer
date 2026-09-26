@@ -27,7 +27,8 @@ so users can diff versions and roll back easily.
 - **Settings panel:** the header badge is now a keyboard-accessible `info` button that
   opens the changelog **on top of** the still-open settings panel — dismissing the
   changelog (scrim, close button, or Escape) reveals the interactive settings dialog
-  with unsaved edits intact. **Clear cache** is a text-only button that still reports
+  with unsaved edits intact and returns focus to the button that opened the notes.
+  **Clear cache** is a text-only button that still reports
   `Cleared ✓` for 1.5 seconds. Icons with no remaining consumer (`inventory_2`,
   `more_vert`) were dropped from the map and from the provenance assets, along with the
   now-dead `.qp-btn svg` styling rule.

@@ -176,7 +176,11 @@ top. Because the changelog is appended to `document.body` last, opening it from 
 settings header puts it above the settings panel. Each overlay keeps its own focus trap
 and its own close button, scrim, and Escape handler, and those handlers remove only
 their own overlay — dismissing the changelog reveals the settings panel with unsaved
-edits intact.
+edits intact. `showChangelog()` captures `document.activeElement` before moving focus to
+its close button and hands focus back on close when that element is still connected, so
+the keyboard returns to the settings info button; if it has been removed in the
+meantime, focus is simply left to fall back instead of being moved to a detached node.
+The buried panel is not made `inert` and its controls are untouched.
 
 Escape is scoped to the top-most overlay (`isTopOverlay`, i.e. the last `.qp-overlay`
 in the DOM) so a keystroke aimed at the top dialog can never close a dialog buried
@@ -325,7 +329,8 @@ comparison-card component.
 - Dialogs have `role="dialog"` and `aria-modal="true"`, close on Escape, and trap Tab
   focus. When two dialogs stack (the settings panel and the changelog above it),
   Escape belongs to the top-most one only and each dialog's close button, scrim, and
-  Escape handler remove only their own overlay.
+  Escape handler remove only their own overlay. Closing the top dialog returns focus to
+  the control that opened it.
 - Icon controls have accessible labels, and the API-key eye toggle supports click,
   Enter, and Space. The bubble carries a per-state `aria-label` (`Quick Fill`,
   `Clear prices and quantities`, `Update all prices`), and the settings info action

@@ -99,7 +99,8 @@ The `info` button in the settings header opens the 2.9.4 release notes **on top 
 the settings panel, which is also how you reopen them after the first automatic
 display. The changelog owns the top position: its close button, scrim, and Escape all
 dismiss only the notes, leaving the settings panel open with your unsaved edits
-intact. Escape is only ever handled by the top-most dialog.
+intact and returning focus to the button that opened them. Escape is only ever handled
+by the top-most dialog.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
