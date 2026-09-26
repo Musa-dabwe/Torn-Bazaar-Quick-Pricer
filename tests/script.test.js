@@ -971,7 +971,7 @@ describe('route-aware circular bubble', () => {
         expect(bubble.getAttribute('aria-label')).toBe('Quick Fill');
 
         QP.setBubbleMode('clear');
-        expect(bubble.getAttribute('aria-label')).toBe('Clear quantities');
+        expect(bubble.getAttribute('aria-label')).toBe('Clear prices and quantities');
 
         QP.setBubbleMode('fill');
         expect(bubble.getAttribute('aria-label')).toBe('Quick Fill');
@@ -1318,7 +1318,7 @@ describe('route-aware circular bubble', () => {
             expect(QP.getBubbleMode()).toBe('clear');
             expect(QP.isBubbleActionClear()).toBe(true);
             expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
-            expect(bubble.getAttribute('aria-label')).toBe('Clear quantities');
+            expect(bubble.getAttribute('aria-label')).toBe('Clear prices and quantities');
         } finally {
             vi.useRealTimers();
         }
@@ -1568,7 +1568,7 @@ describe('clearAllQuantities', () => {
         vi.restoreAllMocks();
     });
 
-    it('clears numeric quantity inputs, keeps prices, and reports the count', () => {
+    it('clears numeric quantity inputs and price inputs, reporting rows and fields', () => {
         const requests = [];
         const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' }, options => requests.push(options));
         addQuantityRow({ price: '1,250', quantity: '25' });
@@ -1579,35 +1579,38 @@ describe('clearAllQuantities', () => {
         document.querySelectorAll('.amount-main-wrap input').forEach(input => {
             expect(input.value).toBe('');
         });
-        expect(document.querySelectorAll('.price input')[0].value).toBe('1,250');
-        expect(second.priceInput.value).toBe('90');
+        expect(document.querySelectorAll('.price input')[0].value).toBe('');
+        expect(second.priceInput.value).toBe('');
         expect(requests).toHaveLength(0);
-        expect(document.querySelector('.qp-toast')?.textContent).toContain('Cleared quantities on 2 items');
+        expect(document.querySelector('.qp-toast')?.textContent).toBe('Cleared 2 items (4 fields)');
     });
 
-    it('unchecks quantity checkboxes and leaves unchecked rows alone', () => {
+    it('unchecks quantity checkboxes and empties the price on the same rows', () => {
         const requests = [];
         const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' }, options => requests.push(options));
         const checked = addQuantityRow({ price: '500', checkbox: true, checked: true });
         const unchecked = addQuantityRow({ price: '600', checkbox: true, checked: false });
 
-        expect(QP.clearAllQuantities()).toBe(1);
+        expect(QP.clearAllQuantities()).toBe(2);
         expect(checked.quantityControl.checked).toBe(false);
         expect(unchecked.quantityControl.checked).toBe(false);
-        expect(checked.priceInput.value).toBe('500');
-        expect(unchecked.priceInput.value).toBe('600');
+        expect(checked.priceInput.value).toBe('');
+        // A row whose only filled control is a price still counts as cleared.
+        expect(unchecked.priceInput.value).toBe('');
         expect(requests).toHaveLength(0);
-        expect(document.querySelector('.qp-toast')?.textContent).toContain('Cleared quantities on 1 item');
+        expect(document.querySelector('.qp-toast')?.textContent).toBe('Cleared 2 items (3 fields)');
     });
 
     it('ignores empty rows and reports nothing to clear', () => {
         const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
         addQuantityRow({ price: '', quantity: '' });
-        addQuantityRow({ price: '10', checkbox: true, checked: false });
+        addQuantityRow({ price: '', checkbox: true, checked: false });
 
         expect(QP.clearAllQuantities()).toBe(0);
-        expect(document.querySelectorAll('.price input')[1].value).toBe('10');
-        expect(document.querySelector('.qp-toast')?.textContent).toContain('No quantities to clear');
+        Array.from(document.querySelectorAll('.price input')).forEach(input => {
+            expect(input.value).toBe('');
+        });
+        expect(document.querySelector('.qp-toast')?.textContent).toBe('Nothing to clear');
     });
 
     it('never mis-targets a checkbox on a row that also has a numeric quantity', () => {
@@ -1672,7 +1675,8 @@ describe('clearAllQuantities', () => {
     it('dispatches the same input and keyup events from both quantity clear paths', () => {
         const { QP } = mountBubble();
 
-        // Clear-all: quantity only, and the page sees the same event pair.
+        // Clear-all: the quantity control and the price both go, and the page
+        // sees the same event pair on the quantity control as the per-item path.
         const all = addQuantityRow({ price: '500', quantity: '7' });
         const allEvents = [];
         ['input', 'keyup'].forEach(type => {
@@ -1681,7 +1685,7 @@ describe('clearAllQuantities', () => {
         QP.clearAllQuantities();
         expect(allEvents).toEqual(['input', 'keyup']);
         expect(all.quantityControl.value).toBe('');
-        expect(all.priceInput.value).toBe('500');
+        expect(all.priceInput.value).toBe('');
 
         // Per-item clear: the same pair on the quantity control, so a page
         // listener cannot tell which path ran or wait for a keyup that never
@@ -1694,6 +1698,138 @@ describe('clearAllQuantities', () => {
         QP.clearItemInputs(single.item);
         expect(singleEvents).toEqual(['input', 'keyup']);
         expect(single.quantityControl.value).toBe('');
+    });
+});
+
+describe('add category signature and bubble reset', () => {
+    beforeEach(() => {
+        document.body.innerHTML = '';
+        window.location.hash = '#/add';
+        vi.restoreAllMocks();
+    });
+
+    /**
+     * Render one Add Items category: a visible list of rows, each carrying the
+     * Torn image whose URL encodes the item id the signature keys off.
+     */
+    function showCategory(itemIds) {
+        document.body.innerHTML = '';
+        const list = document.createElement('ul');
+        list.className = 'items-cont';
+        itemIds.forEach(id => {
+            const item = document.createElement('li');
+            item.className = 'clearfix';
+            const title = document.createElement('div');
+            title.className = 'title-wrap';
+            const imageWrap = document.createElement('div');
+            imageWrap.className = 'image-wrap';
+            const image = document.createElement('img');
+            image.src = `https://www.torn.com/images/items/${id}/large.png`;
+            imageWrap.appendChild(image);
+            title.appendChild(imageWrap);
+            const amount = document.createElement('div');
+            amount.className = 'amount-main-wrap';
+            const quantity = document.createElement('input');
+            amount.appendChild(quantity);
+            const priceWrap = document.createElement('div');
+            priceWrap.className = 'price';
+            const price = document.createElement('input');
+            priceWrap.appendChild(price);
+            item.append(title, amount, priceWrap);
+            list.appendChild(item);
+        });
+        document.body.appendChild(list);
+        return list;
+    }
+
+    it('signs the loaded item ids and ignores every field value', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190]);
+        const before = QP.getVisibleAddCategorySignature();
+        expect(before).toBe(QP.getVisibleAddCategorySignature());
+
+        document.querySelectorAll('.price input').forEach(input => { input.value = '9,999'; });
+        document.querySelectorAll('.amount-main-wrap input').forEach(input => { input.value = '7'; });
+        expect(QP.getVisibleAddCategorySignature()).toBe(before);
+
+        showCategory([206, 191]);
+        expect(QP.getVisibleAddCategorySignature()).not.toBe(before);
+    });
+
+    it('returns an empty signature when no add rows are loaded', () => {
+        const { QP } = mountBubble();
+        expect(QP.getVisibleAddCategorySignature()).toBe('');
+    });
+
+    it('resets the clear state when the user switches category without leaving Add', () => {
+        const { QP, bubble } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+        expect(QP.getBubbleMode()).toBe('clear');
+
+        showCategory([1, 2, 3]);
+        QP.updateBubbleState();
+
+        expect(QP.getBubbleMode()).toBe('fill');
+        expect(QP.isBubbleActionClear()).toBe(false);
+        expect(bubble.textContent).toBe('Fill');
+    });
+
+    it('resets the clear state when the user returns to a previously visited category', () => {
+        const { QP, bubble } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+
+        showCategory([1, 2, 3]);
+        QP.updateBubbleState();
+        QP.setBubbleMode('clear');
+        expect(QP.getBubbleMode()).toBe('clear');
+
+        showCategory([206, 190]);
+        QP.updateBubbleState();
+
+        expect(QP.getBubbleMode()).toBe('fill');
+        expect(bubble.textContent).toBe('Fill');
+    });
+
+    it('keeps the clear state through price and quantity edits in one category', () => {
+        const { QP, bubble } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+
+        document.querySelectorAll('.price input').forEach(input => { input.value = '1,234'; });
+        document.querySelectorAll('.amount-main-wrap input').forEach(input => { input.value = '5'; });
+        QP.updateBubbleState();
+
+        expect(QP.getBubbleMode()).toBe('clear');
+        expect(QP.isBubbleActionClear()).toBe(true);
+        expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
+    });
+
+    it('resets the clear state when the loaded category gains more rows', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+
+        showCategory([206, 190, 191]);
+        QP.updateBubbleState();
+
+        expect(QP.getBubbleMode()).toBe('fill');
+    });
+
+    it('issues no network request while detecting a category change', () => {
+        const requests = [];
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' }, options => requests.push(options));
+        showCategory([206, 190]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+        showCategory([1, 2]);
+        QP.updateBubbleState();
+        expect(requests).toHaveLength(0);
     });
 });
 
@@ -1719,7 +1855,7 @@ describe('Fill and clear bubble actions', () => {
         return row;
     }
 
-    it('clears the quantities of a freshly filled item on the next Add tap', async () => {
+    it('clears the price and quantity of a freshly filled item on the next Add tap', async () => {
         vi.useFakeTimers();
         try {
             const requests = [];
@@ -1744,7 +1880,7 @@ describe('Fill and clear bubble actions', () => {
             pointer(bubble, 'pointerup', { pointerId: 11 });
 
             expect(row.quantityControl.value).toBe('');
-            expect(row.priceInput.value).toBe('100');
+            expect(row.priceInput.value).toBe('');
             expect(requests).toHaveLength(1);
             expect(QP.getBubbleMode()).toBe('fill');
             expect(bubble.textContent).toBe('Fill');
@@ -1775,7 +1911,7 @@ describe('Fill and clear bubble actions', () => {
 
             expect(QP.getBubbleMode()).toBe('clear');
             expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
-            expect(bubble.getAttribute('aria-label')).toBe('Clear quantities');
+            expect(bubble.getAttribute('aria-label')).toBe('Clear prices and quantities');
         } finally {
             vi.useRealTimers();
         }

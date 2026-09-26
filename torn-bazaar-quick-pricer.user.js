@@ -1342,70 +1342,81 @@
         return finalPrice;
     }
 
-    function clearItemInputs(itemElement) {
-        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
+    /**
+     * Clear the price and quantity controls of one add-items row.
+     * @param {Element} itemElement
+     * @param {{onlyIfSet?: boolean}} [options] onlyIfSet skips controls that are
+     *   already blank, so a bulk clear can count what it actually changed.
+     * @returns {number} how many controls were cleared
+     */
+    function clearRowInputs(itemElement, { onlyIfSet = false } = {}) {
+        const isSet = input => String(input && input.value != null ? input.value : '').trim() !== '';
+        let cleared = 0;
         const priceDiv = itemElement.querySelector(SELECTORS.priceWrap);
         if (priceDiv) {
             priceDiv.querySelectorAll('input').forEach(input => {
+                if (onlyIfSet && !isSet(input)) return;
                 input.value = '';
                 input.dispatchEvent(new Event('input', { bubbles: true }));
+                cleared++;
             });
         }
+        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
         if (amountDiv) {
             const isQuantityCheckbox = amountDiv.querySelector(SELECTORS.quantityCheckbox);
             if (isQuantityCheckbox) {
                 const checkbox = isQuantityCheckbox.querySelector('input');
-                if (checkbox && checkbox.checked) checkbox.click();
-            } else {
-                const quantityInput = amountDiv.querySelector('input');
-                if (quantityInput) {
-                    quantityInput.value = '';
-                    // Same events as clearAllQuantities, so a page listener sees
-                    // one consistent signal however the quantity was cleared.
-                    quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
-                }
-            }
-        }
-    }
-
-    /**
-     * Clear the quantity of every currently loaded add-items row, leaving prices
-     * untouched. Only rows in getVisibleItems() are affected — the page
-     * lazy-loads the rest, so anything not rendered cannot be cleared.
-     * @returns {number} how many rows actually had a quantity to clear
-     */
-    function clearAllQuantities() {
-        let cleared = 0;
-        getVisibleItems().forEach(item => {
-            const amountDiv = item.querySelector(SELECTORS.amountWrap);
-            if (!amountDiv) return;
-            const checkboxWrap = amountDiv.querySelector(SELECTORS.quantityCheckbox);
-            if (checkboxWrap) {
-                const checkbox = checkboxWrap.querySelector('input');
                 if (checkbox && checkbox.checked) {
                     checkbox.click();
                     cleared++;
                 }
-                return;
+            } else {
+                // Explicitly exclude checkboxes: a row can carry a checkbox the
+                // quantity-checkbox selector did not match, and clearing that
+                // would corrupt its checked state instead of clearing a quantity.
+                const quantityInput = amountDiv.querySelector('input:not([type=checkbox])');
+                if (quantityInput && (!onlyIfSet || isSet(quantityInput))) {
+                    quantityInput.value = '';
+                    // Same events as the per-item clear, so a page listener sees
+                    // one consistent signal however the quantity was cleared.
+                    quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+                    cleared++;
+                }
             }
-            // Explicitly exclude checkboxes: a row can carry a checkbox the
-            // quantity-checkbox selector did not match, and clicking/blanking
-            // that would corrupt its checked state instead of clearing a quantity.
-            const quantityInput = amountDiv.querySelector('input:not([type=checkbox])');
-            if (quantityInput && String(quantityInput.value || '').trim() !== '') {
-                quantityInput.value = '';
-                quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
-                quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
-                cleared++;
+        }
+        return cleared;
+    }
+
+    /** Clear one row's price and quantity controls, ignoring their current state. */
+    function clearItemInputs(itemElement) {
+        clearRowInputs(itemElement);
+    }
+
+    /**
+     * Clear the price and quantity controls of every currently loaded add-items
+     * row. Only rows in getVisibleItems() are affected — the page lazy-loads the
+     * rest, so anything not rendered cannot be cleared.
+     * @returns {number} how many rows actually had something to clear
+     */
+    function clearAllQuantities() {
+        let rows = 0;
+        let fields = 0;
+        getVisibleItems().forEach(item => {
+            const cleared = clearRowInputs(item, { onlyIfSet: true });
+            if (cleared > 0) {
+                rows++;
+                fields += cleared;
             }
         });
         setBubbleMode('fill');
         qpToast(
-            cleared > 0 ? `Cleared quantities on ${cleared} item${cleared === 1 ? '' : 's'}` : 'No quantities to clear',
-            cleared > 0 ? 'success' : 'info'
+            rows > 0
+                ? `Cleared ${rows} item${rows === 1 ? '' : 's'} (${fields} field${fields === 1 ? '' : 's'})`
+                : 'Nothing to clear',
+            rows > 0 ? 'success' : 'info'
         );
-        return cleared;
+        return rows;
     }
 
     /**
@@ -1707,9 +1718,13 @@
     let bubbleDragging = false;
     let changelogOpen = false;
     // Add route has two user-facing states: 'fill' runs Quick Fill, 'clear' is the
-    // post-fill state whose tap clears the loaded quantities. In memory only — a
-    // reload always starts in 'fill'.
+    // post-fill state whose tap empties the prices and quantities of the loaded
+    // rows. In memory only — a reload always starts in 'fill', and a change of
+    // Add category resets it.
     let bubbleMode = 'fill';
+    // Identity of the Add Items category currently loaded, as an ordered
+    // signature of the rendered item IDs. Session-local, like bubbleMode.
+    let lastAddCategorySignature = null;
     const BUBBLE_LONG_PRESS_MS = 350;
     const BUBBLE_DRAG_THRESHOLD = 6;
     const BUBBLE_KEYBOARD_STEP = 10;
@@ -1757,7 +1772,7 @@
     /** The accessible name announced for each rendered bubble state. */
     const BUBBLE_LABELS = Object.freeze({
         fill: 'Quick Fill',
-        clear: 'Clear quantities',
+        clear: 'Clear prices and quantities',
         manage: 'Update all prices',
         // Transient drag hint: the route state is restored on release/cancel.
         drag: 'Move bubble'
@@ -1795,7 +1810,32 @@
         }
     }
 
+    /**
+     * Ordered signature of the Add Items rows currently loaded, derived from
+     * their item IDs only. Price and quantity values are deliberately excluded so
+     * editing a field can never look like a category change, and nothing here
+     * touches the network. A row with no readable image falls back to its
+     * position, which still changes when the loaded set changes.
+     * @returns {string}
+     */
+    function getVisibleAddCategorySignature() {
+        return getVisibleItems().map((item, index) => {
+            const image = item.querySelector(SELECTORS.itemImage);
+            const itemId = image ? getItemIdFromImage(image) : null;
+            return itemId == null ? `~${index}` : String(itemId);
+        }).join(',');
+    }
+
     function updateBubbleState() {
+        const signature = getVisibleAddCategorySignature();
+        // A different set of loaded items means another Add category is on
+        // screen, so the post-fill Clear action no longer describes what is
+        // loaded and the bubble must offer Quick Fill again. Field edits cannot
+        // change the signature, so they never reset the mode.
+        if (lastAddCategorySignature !== null && signature !== lastAddCategorySignature) {
+            setBubbleMode('fill');
+        }
+        lastAddCategorySignature = signature;
         renderBubbleContent();
         maybeShowChangelog();
     }
@@ -2228,6 +2268,7 @@
             getMaterialIcon,
             getBubbleRoute,
             getBubbleMode,
+            getVisibleAddCategorySignature,
             setBubbleMode,
             isBubbleActionClear,
             renderBubbleContent,
