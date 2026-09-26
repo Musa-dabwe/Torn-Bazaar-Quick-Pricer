@@ -1628,7 +1628,7 @@ describe('clearAllQuantities', () => {
         expect(row.quantityControl.value).toBe('');
     });
 
-    it('only touches currently loaded rows', () => {
+    it('only touches currently loaded rows, leaving hidden prices too', () => {
         const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
         const loaded = addQuantityRow({ price: '10', quantity: '2' });
         const hiddenList = document.createElement('ul');
@@ -1641,13 +1641,20 @@ describe('clearAllQuantities', () => {
         const hiddenQuantity = document.createElement('input');
         hiddenQuantity.value = '9';
         hiddenAmount.appendChild(hiddenQuantity);
-        hiddenItem.appendChild(hiddenAmount);
+        const hiddenPriceWrap = document.createElement('div');
+        hiddenPriceWrap.className = 'price';
+        const hiddenPrice = document.createElement('input');
+        hiddenPrice.value = '4,500';
+        hiddenPriceWrap.appendChild(hiddenPrice);
+        hiddenItem.append(hiddenAmount, hiddenPriceWrap);
         hiddenList.appendChild(hiddenItem);
         document.body.appendChild(hiddenList);
 
         expect(QP.clearAllQuantities()).toBe(1);
         expect(loaded.quantityControl.value).toBe('');
+        expect(loaded.priceInput.value).toBe('');
         expect(hiddenQuantity.value).toBe('9');
+        expect(hiddenPrice.value).toBe('4,500');
     });
 
     it('resets the bubble to the Fill label after clearing', () => {
@@ -1710,9 +1717,11 @@ describe('add category signature and bubble reset', () => {
 
     /**
      * Render one Add Items category: a visible list of rows, each carrying the
-     * Torn image whose URL encodes the item id the signature keys off.
+     * Torn image whose URL encodes the item id the signature keys off. Rows
+     * rendered with bareImages skip the div.image-wrap wrapper so the signature's
+     * image-lookup fallback is exercised against markup the fill path accepts.
      */
-    function showCategory(itemIds) {
+    function showCategory(itemIds, { bareImages = false } = {}) {
         document.body.innerHTML = '';
         const list = document.createElement('ul');
         list.className = 'items-cont';
@@ -1721,12 +1730,16 @@ describe('add category signature and bubble reset', () => {
             item.className = 'clearfix';
             const title = document.createElement('div');
             title.className = 'title-wrap';
-            const imageWrap = document.createElement('div');
-            imageWrap.className = 'image-wrap';
             const image = document.createElement('img');
             image.src = `https://www.torn.com/images/items/${id}/large.png`;
-            imageWrap.appendChild(image);
-            title.appendChild(imageWrap);
+            if (bareImages) {
+                title.appendChild(image);
+            } else {
+                const imageWrap = document.createElement('div');
+                imageWrap.className = 'image-wrap';
+                imageWrap.appendChild(image);
+                title.appendChild(imageWrap);
+            }
             const amount = document.createElement('div');
             amount.className = 'amount-main-wrap';
             const quantity = document.createElement('input');
@@ -1809,16 +1822,120 @@ describe('add category signature and bubble reset', () => {
         expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
     });
 
-    it('resets the clear state when the loaded category gains more rows', () => {
+    it('reads the item id from a row whose image is not wrapped in image-wrap', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190], { bareImages: true });
+        // Real item IDs, not the positional fallback tokens a selector miss
+        // would produce.
+        expect(QP.getVisibleAddCategorySignature()).toBe('206,190');
+    });
+
+    it('keeps the clear state when the same category lazy-loads more rows', () => {
+        const { QP, bubble } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+
+        // Torn appends rows as the user scrolls the same category: the signature
+        // grows, but the category did not change.
+        showCategory([206, 190, 191, 192]);
+        QP.updateBubbleState();
+
+        expect(QP.getBubbleMode()).toBe('clear');
+        expect(QP.isBubbleActionClear()).toBe(true);
+        expect(bubble.innerHTML).toBe(iconHtml(QP, 'close'));
+    });
+
+    it('keeps the clear state across several successive lazy-load steps', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+
+        [[206, 190], [206, 190, 191], [206, 190, 191, 192]].forEach(ids => {
+            showCategory(ids);
+            QP.updateBubbleState();
+            expect(QP.getBubbleMode()).toBe('clear');
+        });
+    });
+
+    it('resets the clear state when a different category shares a trailing item', () => {
         const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
         showCategory([206, 190]);
         QP.setBubbleMode('clear');
         QP.updateBubbleState();
 
-        showCategory([206, 190, 191]);
+        // Same length, different leading item: a genuine switch, not an append.
+        showCategory([999, 190]);
         QP.updateBubbleState();
 
         expect(QP.getBubbleMode()).toBe('fill');
+    });
+
+    it('resets the clear state when a shorter category is loaded after a longer one', () => {
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        showCategory([206, 190, 191]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+
+        showCategory([206]);
+        QP.updateBubbleState();
+
+        expect(QP.getBubbleMode()).toBe('fill');
+    });
+
+    it('does not compare categories off the Add route', () => {
+        window.location.hash = '#/manage';
+        const { QP } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+        // Manage renders no add rows, so the identity is dropped rather than
+        // compared; the route change owns the reset there.
+        showCategory([206, 190]);
+        QP.setBubbleMode('clear');
+        QP.updateBubbleState();
+        expect(QP.getBubbleMode()).toBe('clear');
+
+        // Back on Add, the first render re-establishes the identity instead of
+        // treating the still-loaded rows as a change.
+        window.location.hash = '#/add';
+        QP.updateBubbleState();
+        expect(QP.getBubbleMode()).toBe('clear');
+        expect(QP.getVisibleAddCategorySignature()).toBe('206,190');
+
+        // A genuine switch after the return still resets.
+        showCategory([1, 2]);
+        QP.updateBubbleState();
+        expect(QP.getBubbleMode()).toBe('fill');
+    });
+
+    it('resets through the observer debounce when the rows are swapped', async () => {
+        vi.useFakeTimers();
+        try {
+            const { QP, bubble } = mountBubble({ tornApiKey: 'abcDEF1234567890' });
+            const root = document.createElement('div');
+            document.body.appendChild(root);
+            const renderInto = ids => {
+                // showCategory repopulates the body, so move its list under the
+                // observed root the way Torn's own markup sits.
+                const list = showCategory(ids);
+                root.replaceChildren(list);
+                return list;
+            };
+            renderInto([206, 190]);
+            QP.setupObserver(root);
+            QP.setBubbleMode('clear');
+            QP.updateBubbleState();
+            expect(QP.getBubbleMode()).toBe('clear');
+
+            // Torn swaps the category in place; only the observer notices,
+            // because the hash never changes.
+            renderInto([1, 2, 3]);
+            await vi.advanceTimersByTimeAsync(400);
+
+            expect(QP.getBubbleMode()).toBe('fill');
+            expect(bubble.textContent).toBe('Fill');
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('issues no network request while detecting a category change', () => {
@@ -1953,7 +2070,7 @@ describe('v2.9.4 changelog order and settings info action', () => {
         const items = [...document.querySelectorAll('.qp-changelog__list li')].map(li => li.textContent);
 
         const order = [
-            /clears all listed quantities/i,
+            /clears the price and quantity of every listed item/i,
             /Long-press the bubble to open Settings/i,
             /info button in the Settings header opens the changelog/i,
             /Clear cache is now a text-only button/i,
@@ -1999,7 +2116,7 @@ describe('v2.9.4 changelog order and settings info action', () => {
         expect(document.body.contains(settingsOverlay)).toBe(false);
         expect(document.querySelectorAll('.qp-overlay')).toHaveLength(1);
         expect(document.querySelector('.qp-head__title')?.textContent).toBe("What's new");
-        expect(document.querySelector('.qp-changelog__list li')?.textContent).toMatch(/clears all listed quantities/i);
+        expect(document.querySelector('.qp-changelog__list li')?.textContent).toMatch(/clears the price and quantity of every listed item/i);
     });
 
     it('keeps the Clear cache button text-only and reports its cleared state as text', () => {

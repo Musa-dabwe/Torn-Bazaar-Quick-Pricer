@@ -34,7 +34,7 @@
         // Ordered user-visible-first: the two behavior changes and the route
         // support lead, then the cosmetic bubble, then the plumbing notes.
         notes: Object.freeze([
-            'The Add bubble fills prices, then switches to a close icon whose tap clears all listed quantities.',
+            'The Add bubble fills prices, then switches to a close icon whose tap clears the price and quantity of every listed item, and switching Add category returns it to Fill.',
             'Long-press the bubble to open Settings from any supported view.',
             'The info button in the Settings header opens the changelog.',
             'Clear cache is now a text-only button.',
@@ -1744,7 +1744,7 @@
 
     function getBubbleMode() { return bubbleMode; }
 
-    /** True when the Add tap clears quantities instead of running Quick Fill. */
+    /** True when the Add tap clears prices and quantities instead of running Quick Fill. */
     function isBubbleActionClear() { return bubbleMode === 'clear'; }
 
     function setBubbleMode(mode) {
@@ -1820,22 +1820,44 @@
      */
     function getVisibleAddCategorySignature() {
         return getVisibleItems().map((item, index) => {
-            const image = item.querySelector(SELECTORS.itemImage);
+            // Same lookup fallback chain as the fill path, so a row whose image
+            // sits outside div.image-wrap still contributes its real item ID
+            // instead of degrading to a positional token.
+            const image = item.querySelector(SELECTORS.itemImage) || item.querySelector('img');
             const itemId = image ? getItemIdFromImage(image) : null;
             return itemId == null ? `~${index}` : String(itemId);
         }).join(',');
     }
 
+    /**
+     * Whether a new signature is the same Add category as the previous one.
+     * Torn lazy-loads a category's rows as the user scrolls, so the signature
+     * legitimately grows within one category: an exact match or a prefix
+     * extension of the previous signature is the same category. Any other
+     * difference means a different category is loaded.
+     */
+    function isSameAddCategorySignature(previous, next) {
+        if (previous === next) return true;
+        return next.startsWith(`${previous},`);
+    }
+
     function updateBubbleState() {
-        const signature = getVisibleAddCategorySignature();
-        // A different set of loaded items means another Add category is on
-        // screen, so the post-fill Clear action no longer describes what is
-        // loaded and the bubble must offer Quick Fill again. Field edits cannot
-        // change the signature, so they never reset the mode.
-        if (lastAddCategorySignature !== null && signature !== lastAddCategorySignature) {
-            setBubbleMode('fill');
+        // Only the Add route has loaded add-items rows to identify. On every
+        // other route the identity is dropped rather than compared: the route
+        // change already reset the mode, and the add rows are not rendered.
+        if (getBubbleTab() === 'add') {
+            const signature = getVisibleAddCategorySignature();
+            // A different category on screen means the post-fill Clear action no
+            // longer describes what is loaded, so the bubble offers Quick Fill
+            // again. Field edits and lazy-loaded rows of the same category cannot
+            // change the identity, so they never reset the mode.
+            if (lastAddCategorySignature !== null && !isSameAddCategorySignature(lastAddCategorySignature, signature)) {
+                setBubbleMode('fill');
+            }
+            lastAddCategorySignature = signature;
+        } else {
+            lastAddCategorySignature = null;
         }
-        lastAddCategorySignature = signature;
         renderBubbleContent();
         maybeShowChangelog();
     }
@@ -1863,7 +1885,7 @@
         const route = getBubbleTab();
         // Unsupported routes have no action: never fall through to a batch run.
         if (route === 'unsupported') { renderBubbleContent(); return; }
-        // Clearing quantities is purely local, so it needs no API key.
+        // Clearing prices and quantities is purely local, so it needs no API key.
         if (route === 'add' && isBubbleActionClear()) { clearAllQuantities(); return; }
         if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
         if (route === 'manage') updateAllManagePrices();
@@ -2002,8 +2024,8 @@
             bubbleEl.style.top = `${y}px`;
         });
         // A route change ends the previous session's post-fill state: coming back
-        // to Add must offer Quick Fill, not a Clear action for quantities the
-        // user may already have cleared.
+        // to Add must offer Quick Fill, not a Clear action for fields the user
+        // may already have cleared.
         window.addEventListener('hashchange', () => {
             setBubbleMode('fill');
             updateBubbleState();
@@ -2093,8 +2115,8 @@
         }));
         await Promise.all(promises);
         setBubbleBusy(false);
-        // The batch settled: the Add bubble now offers to clear the quantities
-        // it just wrote, whatever the individual fill results were.
+        // The batch settled: the Add bubble now offers to clear the prices and
+        // quantities it just wrote, whatever the individual fill results were.
         setBubbleMode('clear');
         const failedCount = toFill.length - filled;
         let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
