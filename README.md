@@ -4,7 +4,7 @@ A userscript for [Torn](https://www.torn.com) that fills your bazaar listings wi
 market-based prices in one click — per item or for the whole page — with configurable
 discounting, NPC-floor protection, and ranked-war weapon detection.
 
-**Current version: 2.9.3** — see the [CHANGELOG](CHANGELOG.md) for the release history.
+**Current version: 2.9.4** — see the [CHANGELOG](CHANGELOG.md) for the release history.
 
 ## Features
 
@@ -26,13 +26,40 @@ discounting, NPC-floor protection, and ranked-war weapon detection.
   flagged with a blinking rarity dot and skipped by batch runs, since their real
   value isn't the base item's market price. You can still price them manually after
   a confirmation.
-- **Floating chip** — a pill-shaped control chip that works on any Torn layout
-  (desktop or mobile). Its grip is draggable, its position is remembered and
-  clamped to the viewport, and the action button switches between Quick Fill and
-  Update All based on the bazaar section currently rendered.
-- **Rate-limit aware** — API requests are queued, spaced to stay inside Torn's
-  100 requests/minute limit, deduplicated, cached, and retried with backoff when
-  rate-limited.
+- **Route-aware circular bubble** — a 52 px floating bubble works on desktop and
+  Torn PDA. Only two Torn bazaar routes are supported: **Add items** and
+  **Manage bazaar**. On the base `bazaar.php#/` route, on **Personalize**, and on any
+  other route the bubble is hidden and does nothing at all. Tap it for the route
+  action, drag it to reposition it (the position is remembered and clamped), or
+  long-press for 350 ms to open settings from either supported route.
+  - **Add items:** the bubble reads **Fill**; tapping it runs Quick Fill. Once the
+    batch settles the bubble switches to a `close` icon, and tapping that clears both
+    the price and the quantity of every currently loaded row — the same clear a
+    manual queue removal performs, so no stale price or leftover quantity is left
+    behind — and returns the bubble to **Fill**. Only loaded rows are touched — Torn
+    lazy-loads the rest, and the script never scrolls for you, so scroll down and run
+    again to cover more. A route change — or switching the Add Items category — always
+    resets the bubble to **Fill**, so the clear action is never pointed at rows you can
+    no longer see.
+  - **Manage bazaar:** the bubble shows a `refresh` icon; tapping it runs Update All.
+  - If you navigate away from Add/Manage while a batch is still running, the bubble
+    hides at once — including when that batch finishes. Coming back re-renders the
+    route state.
+  - The release notes for 2.9.4 open automatically on your first **Add items** visit
+    after the update, and once you close them (close button, scrim, or Escape) they
+    are not shown again for that version. You can reopen them any time from the info
+    button in the settings header.
+  - Icons are Material Design assets reviewed from Google's official Material
+  source and acquired from the documented Google Fonts CDN URLs; see
+  [`docs/assets/material-icons/README.md`](docs/assets/material-icons/README.md)
+  for provenance, legacy-serialization details, and Apache License 2.0 attribution.
+- **Rate-limit aware** — fresh cache entries are reused without a network request.
+  Uncached item IDs are collected into bounded API v2 batches of up to 10, queued
+  with 600 ms spacing to stay inside Torn's 100 requests/minute limit, deduplicated,
+  cached, and retried with backoff when rate-limited. If a v2 batch has no usable
+  expected-schema items, the whole batch falls back to the existing per-item v1
+  path. The v2 migration is limited to public price lookup; it does not convert the
+  rest of the script.
 
 ## Installation
 
@@ -57,15 +84,23 @@ it needs. Don't paste a Full Access key into any third-party script.
 
 To create one: Torn → **Settings → API Keys → Create Key → Public**.
 
-You'll be prompted for the key on first run; you can change it later from the
-settings panel (gear icon on the floating chip). The key is stored locally in your
-userscript manager's storage and is sent only to `api.torn.com`. The current script
+You'll be prompted for the key on first run; you can change it later by long-pressing
+the floating bubble for 350 ms. The key is stored locally in your userscript manager's
+storage and is sent only to `api.torn.com`. The current script
 also loads the Nunito display font from Google Fonts; it does not send the API key
 to that service.
 
 ## Settings
 
-Open with the gear icon on the floating chip.
+Long-press the floating bubble for 350 ms on the **Add items** or **Manage bazaar**
+route (the bubble is hidden elsewhere).
+
+The `info` button in the settings header opens the 2.9.4 release notes **on top of**
+the settings panel, which is also how you reopen them after the first automatic
+display. The changelog owns the top position: its close button, scrim, and Escape all
+dismiss only the notes, leaving the settings panel open with your unsaved edits
+intact and returning focus to the button that opened them. Escape is only ever handled
+by the top-most dialog.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -100,6 +135,9 @@ Maintenance notes:
   find/replaces every occurrence with the real key). Never compare against the
   token; validate keys by format.
 - Set the `debug` flag in userscript storage to enable verbose per-item logging.
+- `getBubbleRoute()` deliberately maps every route except Add and Manage to
+  `unsupported`; new routes are not added by default because the bubble hides
+  itself there and the changelog gate only fires on Add.
 
 
 

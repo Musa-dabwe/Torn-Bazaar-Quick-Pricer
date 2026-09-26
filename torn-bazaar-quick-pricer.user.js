@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Bazaar Quick Pricer
 // @namespace    http://tampermonkey.net/
-// @version      2.9.3
+// @version      2.9.4
 // @description  Auto-fill bazaar items with market-based pricing (PDA optimized)
 // @author       Zedtrooper [3028329]
 // @license      MIT
@@ -26,7 +26,25 @@
         return;
     }
 
-    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.3';
+    const VERSION = (typeof GM_info !== 'undefined' && GM_info.script && GM_info.script.version) || '2.9.4';
+
+    const CHANGELOG = Object.freeze([{
+        version: '2.9.4',
+        date: '2026-09-25',
+        // Ordered user-visible-first: the two behavior changes and the route
+        // support lead, then the cosmetic bubble, then the plumbing notes.
+        notes: Object.freeze([
+            'The Add bubble fills prices, then switches to a close icon whose tap clears the price and quantity of every listed item, and switching Add category returns it to Fill.',
+            'Long-press the bubble to open Settings from any supported view.',
+            'The info button in the Settings header opens the changelog above the panel, so closing it leaves your settings edits alone.',
+            'Clear cache is now a text-only button.',
+            'Route-aware actions change the icon and action across the Add and Manage views, and the changelog now opens on the Add route.',
+            'The floating control is now a circular Material 3 bubble that fits mobile and desktop layouts.',
+            'Fresh cached prices stay local; API v2 batches now price up to ten uncached items per request.',
+            'PDA initialization remains compatible with delayed page and hash-route loading.',
+            'v1 fallback and rate-limit safeguards keep request spacing and recovery behavior intact.'
+        ])
+    }]);
 
     console.log(`[BazaarQuickPricer] v${VERSION} Starting (PDA optimized)...`);
 
@@ -278,7 +296,7 @@
 
     // Best-effort cleanup of a previous instance (PDA re-injection / SPA nav
     // without a full reload): sweep any UI the old instance left in the DOM.
-    ['#qp-style', '#qp-font', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
+    ['#qp-style', '#qp-font', '.qp-bubble', '.qp-chip', '.qp-toast-wrap', '.qp-overlay'].forEach(sel =>
         document.querySelectorAll(sel).forEach(el => el.remove()));
 
     // Nunito is the shared display face of the pastel design system
@@ -347,6 +365,7 @@
             box-shadow: none;
         }
         .qp-item-btn.qp-btn-red:hover { background: #f6dede !important; }
+        .qp-item-btn svg { width: 18px; height: 18px; display: block; }
 
         .quick-price-btn, .quick-update-price-btn {
             display: flex; align-items: center; flex-shrink: 0;
@@ -391,15 +410,27 @@
         .qp-head { display: flex; align-items: center; gap: 10px; padding: 18px 18px 0; }
         .qp-head__badge {
             flex: none; width: 40px; height: 40px; border-radius: 11px;
-            background: var(--qp-accent-bg);
+            background: var(--qp-accent-bg); color: var(--qp-accent);
             display: flex; align-items: center; justify-content: center;
         }
-        .qp-head__badge--warn { background: var(--qp-warn-bg); font-size: 16px; }
-        .qp-head__badge--rw   { background: var(--qp-rw-bg);   font-size: 16px; position: relative; }
+        .qp-head__badge svg { width: 22px; height: 22px; display: block; }
+        /* The settings header badge is a real control: it opens the changelog. */
+        .qp-head__badge--action {
+            border: 0; padding: 0; cursor: pointer; font: inherit;
+            -webkit-appearance: none; appearance: none;
+        }
+        .qp-head__badge--action:hover { background: var(--qp-accent); color: #fff; }
+        .qp-head__badge--action:focus-visible { outline: 2px solid var(--qp-accent); outline-offset: 2px; }
+        /* Every badge now holds a 22px Material icon, so the old per-variant
+           text font sizing was dead styling and each variant is declared once. */
+        .qp-head__badge--warn { background: var(--qp-warn-bg); color: var(--qp-warn); }
+        .qp-head__badge--rw   { background: var(--qp-rw-bg);   color: var(--qp-rw); position: relative; }
         .qp-head__badge--rw .qp-rw-dot { position: absolute; right: -4px; top: -4px; margin: 0; width: 10px; height: 10px; background: var(--qp-rw); }
         .qp-head__title { font: 800 15px/1.15 var(--qp-font); color: var(--qp-ink); }
         .qp-head__sub   { font: 700 11.5px/1.3 var(--qp-font); color: var(--qp-muted); margin-top: 1px; }
         .qp-head__sub a { color: var(--qp-accent); font-weight: 800; text-decoration: none; }
+        .qp-external-link { display: inline-flex; align-items: center; gap: 2px; }
+        .qp-external-link svg { width: 12px; height: 12px; }
         .qp-close {
             margin-left: auto; width: 28px; height: 28px; border-radius: 50%;
             background: #f4f2fa; border: none; cursor: pointer;
@@ -408,6 +439,7 @@
             flex: none;
         }
         .qp-close:hover { background: #e9e5f6; }
+        .qp-close svg { width: 16px; height: 16px; display: block; }
         .qp-body { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
 
         /* ── FIELDS ── */
@@ -429,6 +461,7 @@
             display: flex; align-items: center;
         }
         .qp-eye-toggle:hover { color: var(--qp-ink); }
+        .qp-eye-toggle svg { width: 18px; height: 18px; display: block; }
 
         /* note strip (security hint) */
         .qp-note {
@@ -498,6 +531,7 @@
         .qp-btn {
             border: none; cursor: pointer; border-radius: 12px !important; padding: 11px 0;
             font: 900 13.5px var(--qp-font); text-align: center; flex: 1;
+            display: inline-flex; align-items: center; justify-content: center; gap: 7px;
         }
         .qp-btn--primary {
             background: var(--qp-accent); color: #fff;
@@ -520,49 +554,39 @@
             color: var(--qp-ink);
         }
 
-        /* ── FLOATING DRAG CHIP ── */
-        .qp-chip {
+        /* ── CHANGELOG ── */
+        .qp-changelog__version { font: 900 14px var(--qp-font); color: var(--qp-ink); margin: 0; }
+        .qp-changelog__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+        .qp-changelog__list li { position: relative; padding-left: 16px; font: 700 12px/1.5 var(--qp-font); color: var(--qp-ink); }
+        .qp-changelog__list li::before { content: "·"; position: absolute; left: 2px; color: var(--qp-accent); font-weight: 900; }
+
+        /* ── ROUTE-AWARE CIRCULAR BUBBLE ── */
+        .qp-bubble {
             position: fixed;
-            left: 50%; bottom: 18px;
+            left: 50%; bottom: 24px;
             transform: translateX(-50%);
-            display: flex; align-items: center; gap: 6px;
-            background: #fff;
-            border-radius: 999px !important;
-            padding: 6px;
+            width: 52px; height: 52px;
+            border-radius: 50% !important;
+            background: var(--qp-accent);
+            color: #fff;
             z-index: 99998;
-            box-shadow: 0 8px 24px rgba(43,39,64,.18), 0 2px 6px rgba(0,0,0,.08);
+            box-shadow: 0 10px 26px rgba(122,107,214,.4), 0 2px 6px rgba(0,0,0,.08);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
             font-family: var(--qp-font) !important;
             touch-action: none;
+            user-select: none; -webkit-user-select: none;
+            transition: background .2s, box-shadow .2s, transform .15s;
         }
-        .qp-chip.qp-chip-dragging { opacity: 0.85; box-shadow: 0 12px 32px rgba(43,39,64,.3); }
-        .qp-chip-grip {
-            width: 18px; height: 34px;
-            display: flex; align-items: center; justify-content: center;
-            color: #c5c1d6; font: 800 13px/1 var(--qp-font); letter-spacing: -1px;
-            cursor: grab; flex-shrink: 0; user-select: none;
-        }
-        .qp-chip-grip:active { cursor: grabbing; }
-        .qp-chip-fill {
-            border: none; cursor: pointer;
-            background: var(--qp-accent) !important; color: #fff !important;
-            border-radius: 999px !important; padding: 9px 18px !important;
-            font: 900 12.5px var(--qp-font) !important;
-            box-shadow: 0 3px 10px rgba(122,107,214,.35);
-            white-space: nowrap;
-            transition: background .15s;
-        }
-        .qp-chip-fill:hover { background: #6a5ac6 !important; }
-        .qp-chip-fill:disabled {                  /* busy: queue is running */
-            background: var(--qp-accent-bg) !important; color: var(--qp-accent) !important;
-            box-shadow: none; cursor: default;
-        }
-        .qp-chip-gear {
-            border: none; cursor: pointer;
-            width: 34px; height: 34px; border-radius: 50% !important; padding: 0 !important;
-            background: #f4f2fa !important; color: var(--qp-muted) !important;
-            display: flex; align-items: center; justify-content: center;
-        }
-        .qp-chip-gear:hover { background: #e9e5f6 !important; }
+        .qp-bubble:active { transform: translateX(-50%) scale(.94); }
+        .qp-bubble.qp-bubble-dragging { opacity: .9; box-shadow: 0 16px 38px rgba(43,39,64,.32); cursor: grabbing; }
+        .qp-bubble.qp-bubble-busy { cursor: progress; }
+        .qp-bubble.qp-bubble-hidden { display: none; }
+        .qp-bubble svg { width: 26px; height: 26px; display: block; pointer-events: none; }
+        .qp-bubble-progress { color: #fff; font: 900 11px/1 var(--qp-font); user-select: none; }
+        /* Add route "fill" state: the word is the affordance, so it is styled as
+           boldly as an icon would be and never wraps inside the circle. */
+        .qp-bubble-label { color: #fff; font: 900 13px/1 var(--qp-font); letter-spacing: -.2px; user-select: none; }
 
         /* ── TOASTS ── */
         .qp-toast-wrap {
@@ -586,28 +610,34 @@
             display: flex; align-items: center; justify-content: center;
             font: 900 12px var(--qp-font);
         }
+        .qp-toast__icon svg { width: 15px; height: 15px; display: block; }
         .qp-toast-success .qp-toast__icon { background: var(--qp-ok-bg);     color: var(--qp-ok); }
         .qp-toast-error   .qp-toast__icon { background: var(--qp-danger-bg); color: var(--qp-danger); }
         .qp-toast-info    .qp-toast__icon { background: var(--qp-warn-bg);   color: var(--qp-warn); font-size: 11px; }
     `;
     document.head.appendChild(style);
 
-    // =====================================================================
-    // SVGs
-    // =====================================================================
+    // Material Design Icons are embedded to keep the userscript self-contained.
+    const MATERIAL_ICONS = Object.freeze({
+        info: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>`,
+        refresh: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/><path d="M0 0h24v24H0z" fill="none"/></svg>`,
+        settings: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg>`,
+        key: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g><rect fill="none" height="24" width="24"/></g><g><path d="M21,10h-8.35C11.83,7.67,9.61,6,7,6c-3.31,0-6,2.69-6,6s2.69,6,6,6c2.61,0,4.83-1.67,5.65-4H13l2,2l2-2l2,2l4-4.04L21,10z M7,15c-1.65,0-3-1.35-3-3c0-1.65,1.35-3,3-3s3,1.35,3,3C10,13.65,8.65,15,7,15z"/></g></svg>`,
+        visibility: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`,
+        visibility_off: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0zm0 0h24v24H0z" fill="none"/><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`,
+        add: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/><path d="M0 0h24v24H0z" fill="none"/></svg>`,
+        undo: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>`,
+        check_circle: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>`,
+        error: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>`,
+        warning: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>`,
+        sports_martial_arts: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><g><rect fill="none" height="24" width="24"/></g><g><g><polygon points="19.8,2 11.6,8.7 10.39,7.66 13.99,5.58 9.41,1 8,2.41 10.74,5.15 5,8.46 3.81,12.75 6.27,17 8,16 5.97,12.48 6.32,11.18 9.5,13 10,22 12,22 12.5,12 21,3.4"/><circle cx="5" cy="5" r="2"/></g></g></svg>`,
+        open_in_new: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M0 0h24v24H0z" fill="none"/><path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>`,
+        close: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/><path d="M0 0h24v24H0z" fill="none"/></svg>`,
+    });
 
-    const addButtonSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>`;
-    const refreshSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M3 13a9 9 0 1 0 3-7.7L3 8"/></svg>`;
-
-    const eyeSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"/></svg>`;
-    const eyeOffSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z"/></svg>`;
-
-    const gearSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>`;
-
-    // Header badge icons (accent-stroked, per the pastel design system)
-    const keyBadgeSVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 21 2m-4 4 3 3"/></svg>`;
-    const gearBadgeSVG = `<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#7a6bd6" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10 2.1 2.1M19.1 4.9 17 7m-10 10-2.1 2.1"/></svg>`;
-
+    function getMaterialIcon(name) {
+        return Object.hasOwn(MATERIAL_ICONS, name) ? MATERIAL_ICONS[name] : null;
+    }
     // =====================================================================
     // UI HELPERS
     // =====================================================================
@@ -626,12 +656,21 @@
         const flip = () => {
             const isPass = apiInput.type === 'password';
             apiInput.type = isPass ? 'text' : 'password';
-            eyeToggle.innerHTML = isPass ? eyeOffSVG : eyeSVG;
+            eyeToggle.innerHTML = isPass ? getMaterialIcon('visibility_off') : getMaterialIcon('visibility');
         };
         eyeToggle.addEventListener('click', flip);
         eyeToggle.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); }
         });
+    }
+
+    /**
+     * True when `overlay` is the last `.qp-overlay` in the DOM, i.e. the one
+     * painted on top. Overlays share one z-index, so document order decides.
+     */
+    function isTopOverlay(overlay) {
+        const overlays = document.querySelectorAll('.qp-overlay');
+        return overlays.length > 0 && overlays[overlays.length - 1] === overlay;
     }
 
     /** Dialog accessibility: role/aria attributes, Escape to close, Tab focus trap. */
@@ -640,7 +679,15 @@
         modal.setAttribute('role', 'dialog');
         modal.setAttribute('aria-modal', 'true');
         overlay.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') { e.stopPropagation(); onClose(); return; }
+            // Overlays can legitimately stack (Settings opening the changelog), so
+            // Escape belongs to the top-most one only. A buried dialog must never
+            // be closed by a keystroke aimed at the dialog above it.
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                if (isTopOverlay(overlay)) onClose();
+                return;
+            }
+
             if (e.key !== 'Tab') return;
             const focusables = overlay.querySelectorAll('button, input, a[href], [tabindex]:not([tabindex="-1"])');
             if (focusables.length === 0) return;
@@ -665,7 +712,9 @@
         toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
         const icon = document.createElement('span');
         icon.className = 'qp-toast__icon';
-        icon.textContent = kind === 'success' ? '✓' : kind === 'error' ? '!' : 'i';
+        icon.innerHTML = kind === 'success' ? getMaterialIcon('check_circle')
+            : kind === 'error' ? getMaterialIcon('error')
+            : getMaterialIcon('info');
         const text = document.createElement('span');
         text.textContent = message;
         toast.appendChild(icon);
@@ -686,7 +735,7 @@
             overlay.innerHTML = `
                 <div class="qp-modal">
                     <div class="qp-head">
-                        <div class="qp-head__badge ${rw ? 'qp-head__badge--rw' : 'qp-head__badge--warn'}">${rw ? '🗡️<span class="qp-rw-dot"></span>' : '⚠️'}</div>
+                        <div class="qp-head__badge ${rw ? 'qp-head__badge--rw' : 'qp-head__badge--warn'}">${rw ? getMaterialIcon('sports_martial_arts') : getMaterialIcon('warning')}${rw ? '<span class="qp-rw-dot"></span>' : ''}</div>
                         <div class="qp-head__title">${opts.title || 'Confirm'}</div>
                     </div>
                     <div class="qp-body">
@@ -719,19 +768,19 @@
         overlay.innerHTML = `
             <div class="qp-modal">
                 <div class="qp-head">
-                    <div class="qp-head__badge">${keyBadgeSVG}</div>
+                    <div class="qp-head__badge">${getMaterialIcon('key')}</div>
                     <div>
                         <div class="qp-head__title">Quick Pricer</div>
                         <div class="qp-head__sub">Needs your public API key</div>
                     </div>
-                    <button class="qp-close" id="qpCancel" aria-label="Close">✕</button>
+                    <button class="qp-close" id="qpCancel" aria-label="Close">${getMaterialIcon('close')}</button>
                 </div>
                 <div class="qp-body">
                     <div>
                         <div class="qp-label">PUBLIC API KEY</div>
                         <div class="qp-field">
                             <input type="password" id="qpApiKey" placeholder="ENTER KEY" autocomplete="off" spellcheck="false" aria-label="Torn API key" />
-                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
+                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${getMaterialIcon('visibility')}</div>
                         </div>
                     </div>
                     <div class="qp-note"><span>🔒</span><span>A <strong>Public</strong>-level key is enough — the script
@@ -747,21 +796,131 @@
         const apiInput = overlay.querySelector('#qpApiKey');
         wireEyeToggle(overlay, apiInput);
 
+        // Every exit path removes the prompt first and only then runs the
+        // changelog gate, so the two modals can never be stacked.
+        const closePrompt = () => { overlay.remove(); maybeShowChangelog(); };
         overlay.querySelector('#qpSave').onclick = () => {
             const key = apiInput.value.trim();
             if (isValidApiKey(key)) {
                 CONFIG.apiKey = key;
                 overlay.remove();
-                // No reload needed: the chip, observer, and item buttons are already
+                // No reload needed: the bubble, observer, and item buttons are already
                 // wired up; the queue simply starts working once a key exists.
                 qpToast('API key saved', 'success');
+                maybeShowChangelog();
             } else {
                 qpToast('Please enter a valid 16-character alphanumeric API key', 'error');
             }
         };
-        overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
-        overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
-        wireOverlayA11y(overlay, () => overlay.remove());
+        overlay.querySelector('#qpCancel').onclick = closePrompt;
+        overlay.onclick = (e) => { if (e.target === overlay) closePrompt(); };
+        wireOverlayA11y(overlay, closePrompt);
+    }
+
+    /** The version the user has already been shown the changelog for. */
+    const CHANGELOG_SEEN_KEY = 'changelogSeenVersion';
+
+    function shouldShowChangelogForVersion() {
+        return getSetting(CHANGELOG_SEEN_KEY, '') !== VERSION;
+    }
+
+    function markChangelogSeen() {
+        setSetting(CHANGELOG_SEEN_KEY, VERSION);
+    }
+
+    /**
+     * Run the once-per-version changelog gate. The route check lives here, not at
+     * the call sites, because the API-key prompt's close paths call this from any
+     * route: opening the changelog on an unsupported route would both show UI
+     * where no bubble exists and mark the version seen, so the user would never
+     * see it on the first real Add visit. Also skipped while another script
+     * overlay (e.g. the API-key prompt or the Settings panel) is up, so the gate
+     * never stacks a second dialog; the dismissing prompt calls this again once
+     * it is gone. (The Settings info action deliberately stacks the changelog
+     * above the panel, but it does so through showChangelog, never this gate.)
+     */
+    function maybeShowChangelog() {
+        if (getBubbleTab() !== 'add') return false;
+        if (!shouldShowChangelogForVersion() || changelogOpen) return false;
+        if (document.querySelector('.qp-overlay')) return false;
+        showChangelog();
+        return true;
+    }
+
+    function showChangelog() {
+        if (changelogOpen) return;
+        changelogOpen = true;
+        // Appended last so, when it is opened on top of another overlay (the
+        // Settings info action), it paints above it and `isTopOverlay` gives it
+        // exclusive ownership of Escape.
+        // Show the notes for the running version. Falling back to the newest
+        // entry only covers a changelog that has not been given an entry for
+        // this version yet; VERSION is what the gate keys on, so the modal must
+        // never describe a different release than the one just gated.
+        const entry = CHANGELOG.find(item => item.version === VERSION) || CHANGELOG[0];
+        const overlay = document.createElement('div');
+        overlay.className = 'qp-overlay';
+        const modal = document.createElement('div');
+        modal.className = 'qp-modal';
+        const head = document.createElement('div');
+        head.className = 'qp-head';
+        const badge = document.createElement('div');
+        badge.className = 'qp-head__badge';
+        badge.innerHTML = getMaterialIcon('info');
+        const title = document.createElement('div');
+        title.className = 'qp-head__title';
+        title.textContent = "What's new";
+        const closeButton = document.createElement('button');
+        closeButton.className = 'qp-close';
+        closeButton.id = 'qpChangelogClose';
+        closeButton.setAttribute('aria-label', 'Close');
+        closeButton.innerHTML = getMaterialIcon('close');
+        head.append(badge, title, closeButton);
+
+        const body = document.createElement('div');
+        body.className = 'qp-body';
+        const sub = document.createElement('div');
+        sub.className = 'qp-head__sub';
+        sub.textContent = `Quick Pricer v${VERSION}`;
+        const version = document.createElement('p');
+        version.className = 'qp-changelog__version';
+        version.textContent = `${entry.version} · ${entry.date}`;
+        const list = document.createElement('ul');
+        list.className = 'qp-changelog__list';
+        entry.notes.forEach(note => {
+            const item = document.createElement('li');
+            item.textContent = note;
+            list.appendChild(item);
+        });
+        body.append(sub, version, list);
+        modal.append(head, body);
+        overlay.appendChild(modal);
+        document.body.appendChild(overlay);
+
+        // Whatever had focus before this dialog opened is where the user will go
+        // back to when it closes. Captured before `closeButton.focus()` below, and
+        // for the settings info flow that is the still-mounted info button, so
+        // dismissing the changelog leaves the keyboard exactly where it was.
+        const previouslyFocused = document.activeElement;
+
+        // Every close path (button, scrim, Escape) counts as "seen" so the
+        // changelog is shown exactly once per version.
+        const close = () => {
+            changelogOpen = false;
+            markChangelogSeen();
+            overlay.remove();
+            // Only hand focus back to an element that is still in the document:
+            // the previous focus can be gone (removed with another dialog, or a
+            // node torn down mid-interaction), and focusing a detached node would
+            // silently drop focus to the body with no error to catch.
+            if (previouslyFocused && previouslyFocused.isConnected && typeof previouslyFocused.focus === 'function') {
+                previouslyFocused.focus();
+            }
+        };
+        closeButton.addEventListener('click', close);
+        overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
+        wireOverlayA11y(overlay, close);
+        closeButton.focus();
     }
 
     function showSettingsPanel() {
@@ -770,19 +929,19 @@
         overlay.innerHTML = `
             <div class="qp-modal">
                 <div class="qp-head">
-                    <div class="qp-head__badge">${gearBadgeSVG}</div>
+                    <button type="button" class="qp-head__badge qp-head__badge--action" id="qpSettingsInfo" aria-label="What's new in Quick Pricer">${getMaterialIcon('info')}</button>
                     <div>
                         <div class="qp-head__title">Quick Pricer settings</div>
-                        <div class="qp-head__sub">v${VERSION} · <a href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" rel="noopener">GitHub</a></div>
+                        <div class="qp-head__sub">v${VERSION} · <a class="qp-external-link" href="https://github.com/Musa-dabwe/Torn-Bazaar-Quick-Pricer" target="_blank" rel="noopener">GitHub ${getMaterialIcon('open_in_new')}</a></div>
                     </div>
-                    <button class="qp-close" id="qpCancel" aria-label="Close">✕</button>
+                    <button class="qp-close" id="qpCancel" aria-label="Close">${getMaterialIcon('close')}</button>
                 </div>
                 <div class="qp-body">
                     <div>
                         <div class="qp-label">API KEY</div>
                         <div class="qp-field">
                             <input type="password" id="qpApiKey" autocomplete="off" spellcheck="false" aria-label="Torn API key" />
-                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${eyeSVG}</div>
+                            <div class="qp-eye-toggle" id="qpEyeToggle" role="button" tabindex="0" aria-label="Show or hide API key">${getMaterialIcon('visibility')}</div>
                         </div>
                     </div>
                     <div class="qp-note"><span>🔒</span><span>A <strong>Public</strong>-level key is enough — the script only reads item market data.</span></div>
@@ -894,6 +1053,25 @@
         };
 
         overlay.querySelector('#qpCancel').onclick = () => overlay.remove();
+        // The header info action opens the changelog *on top of* the settings panel
+        // instead of replacing it: the user came here to read the notes, and
+        // dropping their unsaved edits on the floor was the surprise. The changelog
+        // is appended last, so it paints above and owns Escape; dismissing it
+        // reveals the still-interactive settings dialog. Enter/Space are handled
+        // explicitly (with preventDefault) so activation stays single-shot in every
+        // browser.
+        const openChangelogFromSettings = () => {
+            showChangelog();
+        };
+        const infoButton = overlay.querySelector('#qpSettingsInfo');
+        infoButton.addEventListener('click', openChangelogFromSettings);
+        infoButton.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                openChangelogFromSettings();
+            }
+        });
         overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
         wireOverlayA11y(overlay, () => overlay.remove());
     }
@@ -936,10 +1114,44 @@
     // API REQUEST QUEUE
     // =====================================================================
 
-    const requestQueue = [];            // { itemId, retries } waiting to be fetched
+    const V2_BATCH_SIZE = 10;
+
+    function buildV2ItemsUrl(itemIds, apiKey) {
+        return `https://api.torn.com/v2/torn/${itemIds.join(',')}/items?key=${apiKey}`;
+    }
+
+    function parseV2ItemsResponse(data, requestedIds) {
+        const values = {};
+        const parsedIds = [];
+        const requested = new Set(requestedIds.map(Number));
+        if (!Array.isArray(data?.items)) return { values, parsedIds };
+
+        for (const item of data.items) {
+            const itemId = Number(item?.id);
+            if (!requested.has(itemId)) continue;
+            const value = item?.value;
+            const hasExpectedSchema = value && typeof value === 'object' &&
+                typeof value.market_price === 'number' && Number.isFinite(value.market_price) &&
+                Object.prototype.hasOwnProperty.call(value, 'sell_price') &&
+                (value.sell_price === null ||
+                    (typeof value.sell_price === 'number' && Number.isFinite(value.sell_price)));
+            if (!hasExpectedSchema) continue;
+
+            values[itemId] = {
+                marketValue: value.market_price,
+                sellPrice: value.sell_price ?? 0
+            };
+            parsedIds.push(itemId);
+        }
+        return { values, parsedIds };
+    }
+
+    const requestQueue = [];            // queue entries waiting to be fetched
     const pendingRequests = new Map();  // itemId -> callback[] (queued or in flight)
     let isProcessingQueue = false;
     let queueHalted = false;            // set when a fatal API error stops the run
+    let requestQueueTimer = null;
+    let nextRequestAt = 0;
 
     const REQUEST_SPACING_MS = 600;         // ≤100 req/min, Torn's documented limit
     const REQUEST_TIMEOUT_MS = 15000;
@@ -960,7 +1172,13 @@
     function finishRequest(itemId, result) {
         const callbacks = pendingRequests.get(itemId) || [];
         pendingRequests.delete(itemId);
-        callbacks.forEach(cb => cb(result));
+        callbacks.forEach(callback => {
+            try {
+                callback(result);
+            } catch (error) {
+                console.error(`[BazaarQuickPricer] Price callback error for item ${itemId}:`, error);
+            }
+        });
     }
 
     function failAllPending() {
@@ -973,18 +1191,93 @@
     function processRequestQueue() {
         if (isProcessingQueue || requestQueue.length === 0) return;
         if (queueHalted) { failAllPending(); return; }
+        if (Date.now() < nextRequestAt) {
+            scheduleRequestQueue();
+            return;
+        }
         isProcessingQueue = true;
-        const { itemId, retries } = requestQueue.shift();
 
         const releaseAndContinue = (delay) => {
             isProcessingQueue = false;
-            setTimeout(processRequestQueue, delay);
+            nextRequestAt = Date.now() + delay;
+            scheduleRequestQueue(delay);
         };
+        const fallbackToV1 = (itemIds, delay = REQUEST_SPACING_MS) => {
+            requestQueue.unshift(...itemIds.map(itemId => ({ type: 'v1', itemIds: [itemId], retries: 0 })));
+            releaseAndContinue(delay);
+        };
+        const handleFatal = code => {
+            if (code === 2) CONFIG.apiKey = '';
+            queueHalted = true;
+            notifyApiError(FATAL_API_ERRORS[code]);
+            failAllPending();
+        };
+
+        const entry = requestQueue.shift();
+        if (entry.type === 'v2-batch') {
+            const itemIds = [...entry.itemIds];
+            while (itemIds.length < V2_BATCH_SIZE && requestQueue[0]?.type === 'v2-batch') {
+                itemIds.push(...requestQueue.shift().itemIds.slice(0, V2_BATCH_SIZE - itemIds.length));
+            }
+            let fallbackQueued = false;
+            const fallbackOnce = () => {
+                if (fallbackQueued) return;
+                fallbackQueued = true;
+                fallbackToV1(itemIds);
+            };
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: buildV2ItemsUrl(itemIds, CONFIG.apiKey),
+                timeout: REQUEST_TIMEOUT_MS,
+                onload: response => {
+                    try {
+                        const data = JSON.parse(response.responseText);
+                        if (data.error) {
+                            const code = data.error.code;
+                            if (FATAL_API_ERRORS[code]) {
+                                handleFatal(code);
+                                return;
+                            }
+                            if (code === 5 && entry.retries < RATE_LIMIT_MAX_RETRIES) {
+                                requestQueue.unshift({ type: 'v2-batch', itemIds, retries: entry.retries + 1 });
+                                releaseAndContinue(RATE_LIMIT_RETRY_DELAY_MS);
+                                return;
+                            }
+                            console.warn(`[BazaarQuickPricer] API error ${code}: ${data.error.error}`);
+                            fallbackOnce();
+                            return;
+                        }
+                        const parsed = parseV2ItemsResponse(data, itemIds);
+                        if (!Array.isArray(data.items) || data.items.length === 0 || parsed.parsedIds.length === 0) {
+                            fallbackOnce();
+                            return;
+                        }
+                        parsed.parsedIds.forEach(itemId => {
+                            const value = parsed.values[itemId];
+                            cachePrice(itemId, value.marketValue, value.sellPrice);
+                            finishRequest(itemId, value);
+                        });
+                        itemIds.filter(itemId => !parsed.parsedIds.includes(itemId))
+                            .forEach(itemId => finishRequest(itemId, { marketValue: 0, sellPrice: 0 }));
+                        releaseAndContinue(REQUEST_SPACING_MS);
+                    } catch (e) {
+                        console.error('[BazaarQuickPricer] Parse error:', e);
+                        fallbackOnce();
+                    }
+                },
+                onerror: fallbackOnce,
+                ontimeout: fallbackOnce,
+                onabort: fallbackOnce
+            });
+            return;
+        }
+
+        const { itemIds, retries } = entry;
+        const itemId = itemIds[0];
         const failItem = () => {
             finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
             releaseAndContinue(REQUEST_SPACING_MS);
         };
-
         GM_xmlhttpRequest({
             method: 'GET',
             url: `https://api.torn.com/torn/${itemId}?selections=items&key=${CONFIG.apiKey}`,
@@ -995,16 +1288,11 @@
                     if (data.error) {
                         const code = data.error.code;
                         if (FATAL_API_ERRORS[code]) {
-                            if (code === 2) CONFIG.apiKey = '';
-                            queueHalted = true;
-                            notifyApiError(FATAL_API_ERRORS[code]);
-                            finishRequest(itemId, { marketValue: 0, sellPrice: 0 });
-                            failAllPending();
+                            handleFatal(code);
                             return;
                         }
                         if (code === 5 && retries < RATE_LIMIT_MAX_RETRIES) {
-                            console.warn('[BazaarQuickPricer] Rate limited, backing off...');
-                            requestQueue.unshift({ itemId, retries: retries + 1 });
+                            requestQueue.unshift({ type: 'v1', itemIds, retries: retries + 1 });
                             releaseAndContinue(RATE_LIMIT_RETRY_DELAY_MS);
                             return;
                         }
@@ -1034,6 +1322,15 @@
         });
     }
 
+    function scheduleRequestQueue(delay = 0) {
+        if (requestQueueTimer !== null) return;
+        const wait = Math.max(delay, nextRequestAt - Date.now());
+        requestQueueTimer = setTimeout(() => {
+            requestQueueTimer = null;
+            processRequestQueue();
+        }, wait);
+    }
+
     /**
      * Get {marketValue, sellPrice} for an item — served from cache when fresh,
      * otherwise queued behind the rate-limited request queue. The callback is
@@ -1056,8 +1353,8 @@
             queueHalted = false;
         }
         pendingRequests.set(itemId, [callback]);
-        requestQueue.push({ itemId, retries: 0 });
-        processRequestQueue();
+        requestQueue.push({ type: 'v2-batch', itemIds: [itemId], retries: 0 });
+        scheduleRequestQueue();
     }
 
     // =====================================================================
@@ -1083,28 +1380,105 @@
         return finalPrice;
     }
 
-    function clearItemInputs(itemElement) {
-        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
+    /**
+     * Clear the price and quantity controls of one add-items row.
+     * @param {Element} itemElement
+     * @param {{onlyIfSet?: boolean}} [options] onlyIfSet skips controls that are
+     *   already blank, so a bulk clear can count what it actually changed.
+     * @returns {number} how many controls were cleared
+     */
+    function clearRowInputs(itemElement, { onlyIfSet = false } = {}) {
+        const isSet = input => String(input && input.value != null ? input.value : '').trim() !== '';
+        let cleared = 0;
         const priceDiv = itemElement.querySelector(SELECTORS.priceWrap);
         if (priceDiv) {
             priceDiv.querySelectorAll('input').forEach(input => {
+                if (onlyIfSet && !isSet(input)) return;
                 input.value = '';
                 input.dispatchEvent(new Event('input', { bubbles: true }));
+                cleared++;
             });
         }
+        const amountDiv = itemElement.querySelector(SELECTORS.amountWrap);
         if (amountDiv) {
             const isQuantityCheckbox = amountDiv.querySelector(SELECTORS.quantityCheckbox);
             if (isQuantityCheckbox) {
                 const checkbox = isQuantityCheckbox.querySelector('input');
-                if (checkbox && checkbox.checked) checkbox.click();
+                if (checkbox && checkbox.checked) {
+                    checkbox.click();
+                    cleared++;
+                }
             } else {
-                const quantityInput = amountDiv.querySelector('input');
-                if (quantityInput) {
+                // Explicitly exclude checkboxes: a row can carry a checkbox the
+                // quantity-checkbox selector did not match, and clearing that
+                // would corrupt its checked state instead of clearing a quantity.
+                const quantityInput = amountDiv.querySelector('input:not([type=checkbox])');
+                if (quantityInput && (!onlyIfSet || isSet(quantityInput))) {
                     quantityInput.value = '';
+                    // Same events as the per-item clear, so a page listener sees
+                    // one consistent signal however the quantity was cleared.
                     quantityInput.dispatchEvent(new Event('input', { bubbles: true }));
+                    quantityInput.dispatchEvent(new Event('keyup', { bubbles: true }));
+                    cleared++;
                 }
             }
         }
+        return cleared;
+    }
+
+    /** Clear one row's price and quantity controls, ignoring their current state. */
+    function clearItemInputs(itemElement) {
+        clearRowInputs(itemElement);
+    }
+
+    /**
+     * Put a row's quick-price button back into its un-filled 'add' mode: drop the
+     * red undo styling and icon, and restore the row's normal tooltip, which
+     * differs for RW weapons. Both clear paths go through this so a row that was
+     * cleared by hand and a row cleared by Clear All end up looking identical.
+     * @param {Element} itemElement
+     * @param {Element} [btn] the button, when the caller already holds a reference
+     */
+    function resetItemButtonToAddMode(itemElement, btn = itemElement.querySelector('.quick-price-btn button')) {
+        if (!btn) return;
+        const rwInfo = getRWBonusInfo(itemElement);
+        btn.classList.remove('qp-btn-red');
+        btn.dataset.mode = 'add';
+        btn.innerHTML = getMaterialIcon('add');
+        btn.title = rwInfo.isRanked
+            ? `RW Weapon (${rwSkipLabel(rwInfo)}) — click to price manually`
+            : 'Quick Add / Undo';
+        btn.setAttribute('aria-label', btn.title);
+    }
+
+    /**
+     * Clear the price and quantity controls of every currently loaded add-items
+     * row. Only rows in getVisibleItems() are affected — the page lazy-loads the
+     * rest, so anything not rendered cannot be cleared.
+     * @returns {number} how many rows actually had something to clear
+     */
+    function clearAllQuantities() {
+        let rows = 0;
+        let fields = 0;
+        getVisibleItems().forEach(item => {
+            const cleared = clearRowInputs(item, { onlyIfSet: true });
+            if (cleared > 0) {
+                rows++;
+                fields += cleared;
+                // A filled row sits in undo mode; clearing its fields without
+                // resetting the button would leave it offering to undo a fill
+                // that is no longer there.
+                resetItemButtonToAddMode(item);
+            }
+        });
+        setBubbleMode('fill');
+        qpToast(
+            rows > 0
+                ? `Cleared ${rows} item${rows === 1 ? '' : 's'} (${fields} field${fields === 1 ? '' : 's'})`
+                : 'Nothing to clear',
+            rows > 0 ? 'success' : 'info'
+        );
+        return rows;
     }
 
     /**
@@ -1145,7 +1519,13 @@
                         }
                     }
                     const btn = itemElement.querySelector('.quick-price-btn button');
-                    if (btn) { btn.classList.add('qp-btn-red'); btn.dataset.mode = 'undo'; }
+                    if (btn) {
+                        btn.classList.add('qp-btn-red');
+                        btn.dataset.mode = 'undo';
+                        btn.innerHTML = getMaterialIcon('undo');
+                        btn.title = 'Undo Quick Fill';
+                        btn.setAttribute('aria-label', btn.title);
+                    }
                     resolve(true);
                     return;
                 } else {
@@ -1277,7 +1657,7 @@
         const { btnContainer, btnInput } = buildItemButton(rwInfo, {
             containerClass: 'quick-update-price-btn',
             buttonClass: 'qp-item-btn',
-            svg: refreshSVG,
+            svg: getMaterialIcon('refresh'),
             normalTitle: 'Update Price'
         });
 
@@ -1313,11 +1693,11 @@
     function getManageItems() {
         // Scoped to the "Manage your Bazaar" section specifically — a plain class-based
         // selector here also matches rows in the "Add items" section (they share the
-        // same item___ classnames), which was causing the chip to misdetect context and
+        // same item___ classnames), which was causing the bubble to misdetect context and
         // fire updateAllManagePrices() on the add-items page. If the manage heading
         // isn't found, treat it as "no manage items" rather than falling back to a
         // document-wide scan, since a false negative here is harmless but a false
-        // positive breaks the chip.
+        // positive breaks the bubble.
         const container = findSectionContainer(h =>
             h.textContent.includes('Manage your Bazaar') ||
             h.textContent.includes('Manage items') ||
@@ -1346,17 +1726,13 @@
     }
 
     async function updateAllManagePrices() {
-        const updateButton = chipFillBtn;
-        if (updateButton) { updateButton.disabled = true; updateButton.style.opacity = '0.5'; updateButton.textContent = 'Loading…'; }
-        const restoreButton = () => {
-            if (updateButton) { updateButton.disabled = false; updateButton.style.opacity = '1'; updateButton.textContent = 'Update All'; }
-        };
+        setBubbleBusy(true, '0%');
 
         // Only the rows Torn has already rendered are processed. If more may be
         // waiting below the fold, we flag it in the summary so the user can
         // scroll to load them and run again (see mayHaveUnloadedItems).
         const items = getManageItems();
-        if (items.length === 0) { restoreButton(); qpToast('No items found to update!', 'error'); return; }
+        if (items.length === 0) { setBubbleBusy(false); qpToast('No items found to update!', 'error'); return; }
         const moreBelow = mayHaveUnloadedItems(items);
 
         // Collect the actual work first so progress and totals are accurate.
@@ -1380,13 +1756,13 @@
         let updated = 0, failed = 0, done = 0;
         for (const { priceDiv, itemId, itemName } of work) {
             done++;
-            if (updateButton) updateButton.textContent = `Updating ${done}/${work.length}`;
+            updateBubbleProgress(`${done}/${work.length}`);
             const result = await updateManageItemPrice(priceDiv, itemId, itemName);
             if (result === 'updated') updated++;
             else if (result === 'failed') failed++;
         }
 
-        restoreButton();
+        setBubbleBusy(false);
         let msg = `Updated ${updated} of ${work.length} item price${work.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
         if (skippedDollar > 0) msg += ` — ${skippedDollar} $1 item${skippedDollar > 1 ? 's' : ''} skipped`;
@@ -1396,146 +1772,327 @@
     }
 
     // =====================================================================
-    // FLOATING DRAG CHIP  (replaces the old embedded "Quick Fill / Update All
-    // / Settings" buttons, which Torn's desktop-top layout could clip or
-    // hide entirely depending on header width. The chip lives on document.body
-    // as a fixed-position element, independent of any page container, so it
-    // can't be hidden by a layout it doesn't belong to. Position is
-    // draggable and persisted per player via GM_setValue.)
+    // ROUTE-AWARE FLOATING BUBBLE
     // =====================================================================
 
-    let chipEl = null;
-    let chipFillBtn = null;
-    let chipContext = null; // 'add' | 'manage' | null
+    let bubbleEl = null;
+    let bubbleBusy = false;
+    let bubbleDragging = false;
+    let changelogOpen = false;
+    // Add route has two user-facing states: 'fill' runs Quick Fill, 'clear' is the
+    // post-fill state whose tap empties the prices and quantities of the loaded
+    // rows. In memory only — a reload always starts in 'fill', and a change of
+    // Add category resets it.
+    let bubbleMode = 'fill';
+    // Identity of the Add Items category currently loaded, as an ordered
+    // signature of the rendered item IDs. Session-local, like bubbleMode.
+    let lastAddCategorySignature = null;
+    const BUBBLE_LONG_PRESS_MS = 350;
+    const BUBBLE_DRAG_THRESHOLD = 6;
+    const BUBBLE_KEYBOARD_STEP = 10;
 
-    function clampChipPosition(x, y) {
-        const rect = chipEl.getBoundingClientRect();
+    /**
+     * The bazaar route the bubble is being rendered for. Only the two routes
+     * with a batch action are supported; the base route, Personalize, and any
+     * unknown route are 'unsupported' and must hide the bubble.
+     */
+    function getBubbleRoute(hash) {
+        const route = String(hash || '').trim().split(/[/?#]/).filter(Boolean)[0];
+        if (route === 'add' || route === 'manage') return route;
+        return 'unsupported';
+    }
+
+    function getBubbleTab() { return getBubbleRoute(window.location.hash); }
+
+    function getBubbleMode() { return bubbleMode; }
+
+    /** True when the Add tap clears prices and quantities instead of running Quick Fill. */
+    function isBubbleActionClear() { return bubbleMode === 'clear'; }
+
+    function setBubbleMode(mode) {
+        bubbleMode = mode === 'clear' ? 'clear' : 'fill';
+        renderBubbleContent();
+    }
+
+    function clampBubblePosition(x, y) {
+        const rect = bubbleEl.getBoundingClientRect();
         const maxX = window.innerWidth - rect.width - 6;
         const maxY = window.innerHeight - rect.height - 6;
         return { x: Math.min(Math.max(x, 6), Math.max(maxX, 6)), y: Math.min(Math.max(y, 6), Math.max(maxY, 6)) };
     }
 
-    function applyChipPosition() {
-        const pos = GM_getValue('chipPosition', null);
-        if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') {
-            // Clamp to the current viewport: a position saved on a large monitor
-            // must not restore off-screen on a phone.
-            const { x, y } = clampChipPosition(pos.x, pos.y);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
-        }
-        // otherwise leave the CSS default (bottom-center) in place
+    function applyBubblePosition() {
+        const position = GM_getValue('chipPosition', null);
+        if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') return;
+        const { x, y } = clampBubblePosition(position.x, position.y);
+        bubbleEl.style.left = `${x}px`;
+        bubbleEl.style.top = `${y}px`;
+        bubbleEl.style.bottom = 'auto';
+        bubbleEl.style.transform = 'none';
     }
 
-    function createFloatingChip() {
-        if (chipEl) return;
-        // Defensive cleanup: if the script gets re-injected (PDA re-injection, SPA route
-        // change) without a full page reload, a previous instance's chip can be orphaned
-        // in the DOM with no reference to clean it up. Sweep those out before making a new one.
-        document.querySelectorAll('.qp-chip').forEach(el => el.remove());
-        chipEl = document.createElement('div');
-        chipEl.className = 'qp-chip';
-        chipEl.innerHTML = `
-            <div class="qp-chip-grip" id="qpChipGrip" title="Drag to reposition" role="button" tabindex="0" aria-label="Move chip (use arrow keys)">⋮⋮</div>
-            <button class="qp-chip-fill" id="qpChipFill">Quick Fill</button>
-            <button class="qp-chip-gear" id="qpChipGear" title="Settings" aria-label="Settings">${gearSVG}</button>
-        `;
-        document.body.appendChild(chipEl);
-        chipFillBtn = chipEl.querySelector('#qpChipFill');
+    /** The accessible name announced for each rendered bubble state. */
+    const BUBBLE_LABELS = Object.freeze({
+        fill: 'Quick Fill',
+        clear: 'Clear prices and quantities',
+        manage: 'Update all prices',
+        // Transient drag hint: the route state is restored on release/cancel.
+        drag: 'Move bubble'
+    });
 
-        applyChipPosition();
+    function renderBubbleContent() {
+        if (!bubbleEl) return;
+        const route = getBubbleTab();
+        // Route visibility wins over every transient state — a running batch and
+        // the drag hint included — so a route with no bubble never shows one.
+        if (route === 'unsupported') {
+            bubbleEl.classList.add('qp-bubble-hidden');
+            return;
+        }
+        bubbleEl.classList.remove('qp-bubble-hidden');
+        // A running batch owns the bubble contents (progress text) until it
+        // settles; setBubbleBusy(false) re-renders the route state then.
+        if (bubbleBusy) return;
+        // While dragging, the settings icon hints that the gesture moves the
+        // bubble; the route state is restored on release or cancel.
+        if (bubbleDragging) {
+            bubbleEl.innerHTML = getMaterialIcon('settings');
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.drag);
+            return;
+        }
+        if (route === 'manage') {
+            bubbleEl.innerHTML = getMaterialIcon('refresh');
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.manage);
+        } else if (bubbleMode === 'clear') {
+            bubbleEl.innerHTML = getMaterialIcon('close');
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.clear);
+        } else {
+            bubbleEl.innerHTML = '<span class="qp-bubble-label">Fill</span>';
+            bubbleEl.setAttribute('aria-label', BUBBLE_LABELS.fill);
+        }
+    }
 
-        chipEl.querySelector('#qpChipGear').addEventListener('click', (e) => {
-            e.preventDefault();
-            showSettingsPanel();
-        });
+    /**
+     * Ordered signature of the Add Items rows currently loaded, derived from
+     * their item IDs only. Price and quantity values are deliberately excluded so
+     * editing a field can never look like a category change, and nothing here
+     * touches the network. A row with no readable image falls back to its
+     * position, which still changes when the loaded set changes.
+     * @returns {string}
+     */
+    function getVisibleAddCategorySignature() {
+        return getVisibleItems().map((item, index) => {
+            // Same lookup fallback chain as the fill path, so a row whose image
+            // sits outside div.image-wrap still contributes its real item ID
+            // instead of degrading to a positional token.
+            const image = item.querySelector(SELECTORS.itemImage) || item.querySelector('img');
+            const itemId = image ? getItemIdFromImage(image) : null;
+            return itemId == null ? `~${index}` : String(itemId);
+        }).join(',');
+    }
 
-        chipFillBtn.addEventListener('click', () => {
-            if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
-            if (chipContext === 'manage') updateAllManagePrices();
-            else fillAllItems();
-        });
+    /**
+     * Whether a new signature is the same Add category as the previous one.
+     * Torn lazy-loads a category's rows as the user scrolls, so the signature
+     * legitimately grows within one category: an exact match or a prefix
+     * extension of the previous signature is the same category. Any other
+     * difference means a different category is loaded.
+     */
+    function isSameAddCategorySignature(previous, next) {
+        if (previous === next) return true;
+        return next.startsWith(`${previous},`);
+    }
 
-        // Drag handling via Pointer Events (covers mouse + touch/stylus in one API)
-        const grip = chipEl.querySelector('#qpChipGrip');
-        let dragOffsetX = 0, dragOffsetY = 0, dragging = false;
+    function updateBubbleState() {
+        // Only the Add route has loaded add-items rows to identify. On every
+        // other route the identity is dropped rather than compared: the route
+        // change already reset the mode, and the add rows are not rendered.
+        if (getBubbleTab() === 'add') {
+            const signature = getVisibleAddCategorySignature();
+            // A different category on screen means the post-fill Clear action no
+            // longer describes what is loaded, so the bubble offers Quick Fill
+            // again. Field edits and lazy-loaded rows of the same category cannot
+            // change the identity, so they never reset the mode.
+            if (lastAddCategorySignature !== null && !isSameAddCategorySignature(lastAddCategorySignature, signature)) {
+                setBubbleMode('fill');
+            }
+            lastAddCategorySignature = signature;
+        } else {
+            lastAddCategorySignature = null;
+        }
+        renderBubbleContent();
+        maybeShowChangelog();
+    }
 
-        grip.addEventListener('pointerdown', (e) => {
-            dragging = true;
-            chipEl.classList.add('qp-chip-dragging');
-            const rect = chipEl.getBoundingClientRect();
-            // Lock in current pixel position before dragging so left/top math is stable
-            chipEl.style.left = rect.left + 'px';
-            chipEl.style.top = rect.top + 'px';
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
-            dragOffsetX = e.clientX - rect.left;
-            dragOffsetY = e.clientY - rect.top;
-            grip.setPointerCapture(e.pointerId);
-        });
-        grip.addEventListener('pointermove', (e) => {
-            if (!dragging) return;
-            const { x, y } = clampChipPosition(e.clientX - dragOffsetX, e.clientY - dragOffsetY);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
-        });
-        const endDrag = (e) => {
-            if (!dragging) return;
+    function setBubbleBusy(busy, progressText) {
+        bubbleBusy = busy;
+        if (!bubbleEl) return;
+        bubbleEl.classList.toggle('qp-bubble-busy', busy);
+        if (busy) {
+            const progress = document.createElement('span');
+            progress.className = 'qp-bubble-progress';
+            progress.textContent = String(progressText ?? '');
+            bubbleEl.replaceChildren(progress);
+        } else {
+            renderBubbleContent();
+        }
+    }
+
+    function updateBubbleProgress(text) {
+        if (bubbleBusy && bubbleEl) setBubbleBusy(true, text);
+    }
+
+    function onBubbleTap() {
+        if (bubbleBusy) return;
+        const route = getBubbleTab();
+        // Unsupported routes have no action: never fall through to a batch run.
+        if (route === 'unsupported') { renderBubbleContent(); return; }
+        // Clearing prices and quantities is purely local, so it needs no API key.
+        if (route === 'add' && isBubbleActionClear()) { clearAllQuantities(); return; }
+        if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
+        if (route === 'manage') updateAllManagePrices();
+        else fillAllItems();
+    }
+
+    function onBubbleLongPress() {
+        showSettingsPanel();
+    }
+
+    function createFloatingBubble() {
+        if (bubbleEl) return bubbleEl;
+        document.querySelectorAll('.qp-bubble').forEach(element => element.remove());
+        bubbleEl = document.createElement('div');
+        bubbleEl.className = 'qp-bubble';
+        bubbleEl.setAttribute('role', 'button');
+        bubbleEl.setAttribute('tabindex', '0');
+        bubbleEl.setAttribute('aria-label', 'Quick Pricer');
+        bubbleEl.setAttribute('title', 'Quick Pricer');
+        document.body.appendChild(bubbleEl);
+        renderBubbleContent();
+        applyBubblePosition();
+
+        let longPressTimer = null;
+        let activePointerId = null;
+        let dragging = false;
+        let didLongPress = false;
+        let startX = 0;
+        let startY = 0;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        const clearBubbleGesture = () => {
+            if (longPressTimer !== null) clearTimeout(longPressTimer);
+            longPressTimer = null;
+            activePointerId = null;
             dragging = false;
-            chipEl.classList.remove('qp-chip-dragging');
-            const rect = chipEl.getBoundingClientRect();
-            GM_setValue('chipPosition', { x: rect.left, y: rect.top });
+            didLongPress = false;
+            bubbleEl.classList.remove('qp-bubble-dragging');
+            if (bubbleDragging) {
+                bubbleDragging = false;
+                renderBubbleContent();
+            }
         };
-        grip.addEventListener('pointerup', endDrag);
-        grip.addEventListener('pointercancel', endDrag);
 
-        // Keyboard repositioning for the grip (paired with its role="button")
-        grip.addEventListener('keydown', (e) => {
-            const step = 10;
-            let dx = 0, dy = 0;
-            if (e.key === 'ArrowLeft') dx = -step;
-            else if (e.key === 'ArrowRight') dx = step;
-            else if (e.key === 'ArrowUp') dy = -step;
-            else if (e.key === 'ArrowDown') dy = step;
+        bubbleEl.addEventListener('pointerdown', event => {
+            if (bubbleBusy || activePointerId !== null) return;
+            clearBubbleGesture();
+            activePointerId = event.pointerId;
+            dragging = false;
+            didLongPress = false;
+            startX = event.clientX;
+            startY = event.clientY;
+            const rect = bubbleEl.getBoundingClientRect();
+            bubbleEl.style.left = `${rect.left}px`;
+            bubbleEl.style.top = `${rect.top}px`;
+            bubbleEl.style.bottom = 'auto';
+            bubbleEl.style.transform = 'none';
+            dragOffsetX = event.clientX - rect.left;
+            dragOffsetY = event.clientY - rect.top;
+            bubbleEl.setPointerCapture(event.pointerId);
+            const pointerId = event.pointerId;
+            longPressTimer = setTimeout(() => {
+                if (activePointerId !== pointerId) return;
+                longPressTimer = null;
+                didLongPress = true;
+                onBubbleLongPress();
+            }, BUBBLE_LONG_PRESS_MS);
+        });
+
+        bubbleEl.addEventListener('pointermove', event => {
+            if (bubbleBusy || activePointerId !== event.pointerId) return;
+            const movedPastThreshold = Math.hypot(event.clientX - startX, event.clientY - startY) > BUBBLE_DRAG_THRESHOLD;
+            if (longPressTimer !== null && movedPastThreshold) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                dragging = true;
+                bubbleDragging = true;
+                bubbleEl.classList.add('qp-bubble-dragging');
+                renderBubbleContent();
+            }
+            if (!dragging) return;
+            const { x, y } = clampBubblePosition(event.clientX - dragOffsetX, event.clientY - dragOffsetY);
+            bubbleEl.style.left = `${x}px`;
+            bubbleEl.style.top = `${y}px`;
+        });
+
+        const endBubbleGesture = event => {
+            if (bubbleBusy || activePointerId !== event.pointerId) return;
+            const wasDragging = dragging;
+            const wasLongPress = didLongPress;
+            const rect = bubbleEl.getBoundingClientRect();
+            clearBubbleGesture();
+            if (wasDragging) {
+                GM_setValue('chipPosition', { x: rect.left, y: rect.top });
+                return;
+            }
+            if (!wasLongPress) onBubbleTap();
+        };
+        bubbleEl.addEventListener('pointerup', endBubbleGesture);
+        bubbleEl.addEventListener('pointercancel', event => {
+            if (activePointerId === event.pointerId) clearBubbleGesture();
+        });
+
+        bubbleEl.addEventListener('keydown', event => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onBubbleTap();
+                return;
+            }
+            let dx = 0;
+            let dy = 0;
+            if (event.key === 'ArrowLeft') dx = -BUBBLE_KEYBOARD_STEP;
+            else if (event.key === 'ArrowRight') dx = BUBBLE_KEYBOARD_STEP;
+            else if (event.key === 'ArrowUp') dy = -BUBBLE_KEYBOARD_STEP;
+            else if (event.key === 'ArrowDown') dy = BUBBLE_KEYBOARD_STEP;
             else return;
-            e.preventDefault();
-            const rect = chipEl.getBoundingClientRect();
-            chipEl.style.bottom = 'auto';
-            chipEl.style.transform = 'none';
-            const { x, y } = clampChipPosition(rect.left + dx, rect.top + dy);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
+            event.preventDefault();
+            const rect = bubbleEl.getBoundingClientRect();
+            bubbleEl.style.bottom = 'auto';
+            bubbleEl.style.transform = 'none';
+            const { x, y } = clampBubblePosition(rect.left + dx, rect.top + dy);
+            bubbleEl.style.left = `${x}px`;
+            bubbleEl.style.top = `${y}px`;
             GM_setValue('chipPosition', { x, y });
+        });
+        bubbleEl.addEventListener('keyup', event => {
+            if (event.key === ' ') event.preventDefault();
         });
 
         window.addEventListener('resize', () => {
-            if (!chipEl) return;
-            const pos = GM_getValue('chipPosition', null);
-            if (!pos) return;
-            const { x, y } = clampChipPosition(pos.x, pos.y);
-            chipEl.style.left = x + 'px';
-            chipEl.style.top = y + 'px';
+            const position = GM_getValue('chipPosition', null);
+            if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') return;
+            const { x, y } = clampBubblePosition(position.x, position.y);
+            bubbleEl.style.left = `${x}px`;
+            bubbleEl.style.top = `${y}px`;
         });
-    }
-
-    function updateChipContext() {
-        if (!chipEl) return;
-        // A running batch owns the button label (progress text) — don't clobber it.
-        if (chipFillBtn && chipFillBtn.disabled) return;
-        const manageCount = getManageItems().length;
-        if (manageCount > 0) {
-            chipContext = 'manage';
-            chipFillBtn.textContent = 'Update All';
-            return;
-        }
-        const addCount = getVisibleItems().length;
-        if (addCount > 0) {
-            chipContext = 'add';
-            chipFillBtn.textContent = 'Quick Fill';
-        }
-        // if neither section has items yet (still loading), keep the last known context
+        // A route change ends the previous session's post-fill state: coming back
+        // to Add must offer Quick Fill, not a Clear action for fields the user
+        // may already have cleared.
+        window.addEventListener('hashchange', () => {
+            setBubbleMode('fill');
+            updateBubbleState();
+        });
+        return bubbleEl;
     }
 
     function processManageItems() {
@@ -1566,7 +2123,7 @@
         const { btnContainer, btnInput } = buildItemButton(rwInfo, {
             containerClass: 'quick-price-btn',
             buttonClass: 'qp-item-btn',
-            svg: addButtonSVG,
+            svg: getMaterialIcon('add'),
             normalTitle: 'Quick Add / Undo'
         });
         btnInput.dataset.mode = 'add';
@@ -1579,8 +2136,7 @@
             event.stopPropagation();
             if (btnInput.dataset.mode === 'undo') {
                 clearItemInputs(itemElement);
-                btnInput.classList.remove('qp-btn-red');
-                btnInput.dataset.mode = 'add';
+                resetItemButtonToAddMode(itemElement, btnInput);
                 return;
             }
             if (!CONFIG.apiKey) { showApiKeyPrompt(); return; }
@@ -1592,13 +2148,12 @@
     }
 
     async function fillAllItems() {
-        const fillButton = chipFillBtn;
-        if (fillButton) { fillButton.disabled = true; fillButton.style.opacity = '0.5'; fillButton.textContent = 'Loading…'; }
+        setBubbleBusy(true, '0%');
         // Same as Update All: only the rows Torn has already rendered are
         // processed; rows below the fold aren't in the DOM until scrolled to.
         const items = getVisibleItems();
         if (items.length === 0) {
-            if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
+            setBubbleBusy(false);
             qpToast('No items found to fill!', 'error');
             return;
         }
@@ -1608,15 +2163,17 @@
             if (CONFIG.skipRwWeapons && getRWBonusInfo(item).isRanked) { skippedRw++; return false; }
             return true;
         });
-        if (fillButton) fillButton.textContent = `Filling 0/${toFill.length}`;
         let completed = 0, filled = 0;
         const promises = toFill.map(item => fillItemPrice(item).then((ok) => {
             completed++;
             if (ok) filled++;
-            if (fillButton) fillButton.textContent = `Filling ${completed}/${toFill.length}`;
+            updateBubbleProgress(`${completed}/${toFill.length}`);
         }));
         await Promise.all(promises);
-        if (fillButton) { fillButton.disabled = false; fillButton.style.opacity = '1'; fillButton.textContent = 'Quick Fill'; }
+        setBubbleBusy(false);
+        // The batch settled: the Add bubble now offers to clear the prices and
+        // quantities it just wrote, whatever the individual fill results were.
+        setBubbleMode('clear');
         const failedCount = toFill.length - filled;
         let msg = `Filled ${filled} of ${toFill.length} item${toFill.length === 1 ? '' : 's'}`;
         if (skippedRw > 0) msg += ` — ${skippedRw} RW weapon${skippedRw > 1 ? 's' : ''} skipped`;
@@ -1651,84 +2208,100 @@
             mutationDebounceTimer = setTimeout(() => {
                 processAllItems();
                 processManageItems();
-                updateChipContext();
+                updateBubbleState();
             }, 300);
         });
         bazaarObserver.observe(bazaarRoot, { childList: true, subtree: true });
     }
 
     function initScript(bazaarRoot) {
-        // Full init regardless of key state: the chip and item buttons stay usable
+        // Full init regardless of key state: the bubble and item buttons stay usable
         // and simply prompt for a key when clicked, instead of the script going
         // dead until a reload if the first-run prompt is dismissed.
         processAllItems();
         setupObserver(bazaarRoot);
         processManageItems();
-        createFloatingChip();
-        updateChipContext();
-        if (!CONFIG.apiKey) showApiKeyPrompt();
+        createFloatingBubble();
+        if (CONFIG.apiKey) {
+            updateBubbleState();
+        } else {
+            // The key prompt owns the screen first; its close path runs the
+            // changelog gate so the two modals never stack on first launch.
+            showApiKeyPrompt();
+            renderBubbleContent();
+        }
     }
 
     let isScriptInitialized = false;
+    let rootWaitCleanup = null;
 
     const ROOT_WAIT_TIMEOUT_MS = 20000;
 
+    function findBazaarRoot() {
+        return document.querySelector(SELECTORS.bazaarRoot) || document.querySelector(SELECTORS.bazaarRootLegacy);
+    }
+
+    function cleanupRootWait() {
+        if (!rootWaitCleanup) return;
+        const cleanup = rootWaitCleanup;
+        rootWaitCleanup = null;
+        cleanup();
+    }
+
+    function completeInitialization(root) {
+        if (isScriptInitialized) return;
+        isScriptInitialized = true;
+        cleanupRootWait();
+        initScript(root);
+    }
+
     function checkForBazaar() {
         if (isScriptInitialized) return;
-        const findRoot = () =>
-            document.querySelector(SELECTORS.bazaarRoot) || document.querySelector(SELECTORS.bazaarRootLegacy);
-        const root = findRoot();
+        const root = findBazaarRoot();
         if (root) {
-            isScriptInitialized = true;
-            initScript(root);
+            completeInitialization(root);
             return;
         }
+        if (rootWaitCleanup) return;
 
         // Multi-stage initialization fallback strategy for Torn PDA and various mobile browsers:
         // 1. MutationObserver on document.body or documentElement
         let observer = null;
+        let pollingInterval = null;
+        let giveUpTimer = null;
+        const cleanup = () => {
+            if (observer) observer.disconnect();
+            if (pollingInterval) clearInterval(pollingInterval);
+            if (giveUpTimer) clearTimeout(giveUpTimer);
+        };
+        rootWaitCleanup = cleanup;
+
         const target = document.body || document.documentElement;
         if (target) {
             observer = new MutationObserver(() => {
-                if (isScriptInitialized) { observer.disconnect(); return; }
-                const found = findRoot();
-                if (found) {
-                    isScriptInitialized = true;
-                    observer.disconnect();
-                    if (pollingInterval) clearInterval(pollingInterval);
-                    clearTimeout(giveUpTimer);
-                    initScript(found);
-                }
+                const found = findBazaarRoot();
+                if (found) completeInitialization(found);
             });
             observer.observe(target, { childList: true, subtree: true });
         }
 
         // 2. Polling fallback (100ms interval for up to 50 attempts = 5s)
         let attempts = 0;
-        const pollingInterval = setInterval(() => {
-            if (isScriptInitialized) {
-                clearInterval(pollingInterval);
-                if (observer) observer.disconnect();
-                return;
-            }
+        pollingInterval = setInterval(() => {
             attempts++;
-            const found = findRoot();
+            const found = findBazaarRoot();
             if (found) {
-                isScriptInitialized = true;
-                clearInterval(pollingInterval);
-                if (observer) observer.disconnect();
-                clearTimeout(giveUpTimer);
-                initScript(found);
+                completeInitialization(found);
             } else if (attempts >= 50) {
                 clearInterval(pollingInterval);
+                pollingInterval = null;
             }
         }, 100);
 
         // 3. Hard timeout safeguard
-        const giveUpTimer = setTimeout(() => {
+        giveUpTimer = setTimeout(() => {
             if (!isScriptInitialized) {
-                if (observer) observer.disconnect();
-                if (pollingInterval) clearInterval(pollingInterval);
+                cleanupRootWait();
                 console.warn(`[BazaarQuickPricer] Bazaar container not found after ${ROOT_WAIT_TIMEOUT_MS / 1000}s — giving up`);
             }
         }, ROOT_WAIT_TIMEOUT_MS);
@@ -1741,7 +2314,7 @@
 
         // Stage 1: DOMContentLoaded listener
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', checkForBazaar);
+            document.addEventListener('DOMContentLoaded', checkForBazaar, { once: true });
         }
     }
 
@@ -1760,11 +2333,38 @@
             getItemIdFromImage,
             getQuantity,
             getItemName,
+            V2_BATCH_SIZE,
+            buildV2ItemsUrl,
+            parseV2ItemsResponse,
+            fetchItemData,
             getCachedPrice,
             cachePrice,
             clearPriceCache,
             CONFIG,
-            SELECTORS
+            SELECTORS,
+            MATERIAL_ICONS,
+            getMaterialIcon,
+            getBubbleRoute,
+            getBubbleMode,
+            getVisibleAddCategorySignature,
+            setBubbleMode,
+            isBubbleActionClear,
+            renderBubbleContent,
+            updateBubbleState,
+            setBubbleBusy,
+            updateBubbleProgress,
+            createFloatingBubble,
+            setupObserver,
+            showApiKeyPrompt,
+            showChangelog,
+            shouldShowChangelogForVersion,
+            markChangelogSeen,
+            showSettingsPanel,
+            fillAllItems,
+            clearAllQuantities,
+            clearItemInputs,
+            checkForBazaar,
+            init
         };
         return;
     }

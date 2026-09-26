@@ -1,9 +1,55 @@
 # Changelog
 
 The userscript metadata in `torn-bazaar-quick-pricer.user.js` currently declares
-**version 2.9.3**. The project package metadata is kept at the same version. Releases
-should be tagged (`v2.9.3`, …) and published as GitHub Releases when merged to `main`,
+**version 2.9.4**. The project package metadata is kept at the same version. Releases
+should be tagged (`v2.9.4`, …) and published as GitHub Releases when merged to `main`,
 so users can diff versions and roll back easily.
+
+## 2.9.4 — 2026-09-25
+
+- **API v2 batching:** fresh cache entries remain local; uncached item IDs are grouped
+  into requests of at most 10, serialized 600 ms apart to respect Torn's rate limit.
+- **Conservative fallback:** a malformed or unusable v2 schema fails the whole batch
+  over to the existing per-item API v1 path. Valid items in mixed responses are kept,
+  while malformed items fail independently.
+- **Circular route-aware bubble:** the former pill chip is now a draggable 52 px
+  circular Material 3 bubble. It is shown only on the **Add** and **Manage** routes;
+  the base route and Personalize hide it. On Add the bubble reads **Fill**, and once
+  a fill finishes it switches to a `close` icon whose tap clears the price *and*
+  quantity of every listed item — the same per-item clear a manual queue removal
+  performs, so no stale price or leftover quantity survives a clear. Changing the Add
+  Items category returns the bubble to **Fill** instead of leaving a stale clear
+  action pointed at rows the user can no longer see. On Manage it shows a refresh
+  icon and returns to that state after Update All.
+- **Settings by long press:** long-pressing the bubble for 350 ms opens the settings
+  panel from either supported route; dragging past the drag threshold shows the
+  settings affordance inside the bubble and restores the route state on release.
+- **Settings panel:** the header badge is now a keyboard-accessible `info` button that
+  opens the changelog **on top of** the still-open settings panel — dismissing the
+  changelog (scrim, close button, or Escape) reveals the interactive settings dialog
+  with unsaved edits intact and returns focus to the button that opened the notes.
+  **Clear cache** is a text-only button that still reports
+  `Cleared ✓` for 1.5 seconds. Icons with no remaining consumer (`inventory_2`,
+  `more_vert`) were dropped from the map and from the provenance assets, along with the
+  now-dead `.qp-btn svg` styling rule.
+- **Material 3 icons:** inline SVG paths are Material Design assets reviewed from
+  Google's official Material source and acquired from the documented Google Fonts CDN
+  URLs. The assets README records the differing legacy serializations and Apache
+  License 2.0 attribution. The single-file userscript makes no runtime icon request.
+- **PDA initialization:** immediate root detection, a one-shot DOMContentLoaded
+  fallback, bounded observer/poll cleanup, and a 20-second timeout cover delayed
+  Torn PDA rendering. API prompt, settings, and changelog dialogs do not force focus
+  into the API-key field.
+- **Changelog modal:** these notes open once per version on the Add route — either
+  automatically on the first Add visit or from the settings header info button at any
+  time. Scrim, close button, and Escape all close the dialog and mark the version seen.
+  Because the two overlays can now be stacked, Escape belongs to the top-most dialog
+  only: pressing it with the changelog above the settings panel closes only the
+  changelog, and the automatic first-Add gate still refuses to open a second dialog
+  over an open settings panel or API-key prompt.
+- **Manual verification:** the installed userscript was exercised on the real batch
+  path and rows filled in groups of 10, matching the API v2 batching behavior. The
+  final live desktop/PDA smoke test remains pending as a release gate.
 
 ## 2.9.3 — 2026-07-12
 
@@ -88,8 +134,10 @@ Implementation of the v2.8.9 code audit.
   and keyboard chip repositioning with arrow keys.
 
 ### Security and privacy
-- The current source uses Torn API v1 with the key in the query string; migration to API
-  v2 with an `Authorization` header remains deferred.
+- In the historical 2.9 release, the source used Torn API v1 with the key in the query
+  string; migration to API v2 with an `Authorization` header remained deferred. The
+  current v2.9.4 source uses cache-first API v2 price lookup with the existing v1 path
+  as a fallback.
 - The current source injects a Nunito stylesheet from `fonts.googleapis.com`. The
   script does not send the API key to Google, but the font request is still a
   third-party network request.
@@ -102,10 +150,10 @@ Implementation of the v2.8.9 code audit.
 - The repository includes ESLint, a Vitest + jsdom suite, and a GitHub Actions CI
   workflow.
 
-### Deferred
-- Migration to Torn API v2 with the key in an `Authorization` header is deferred: it
-  cannot be safely verified without live API access. The script still uses the v1
-  endpoint with the key in the query string.
+### Deferred in the historical 2.9 release
+- The 2.9 release deferred a full migration to Torn API v2 because it could not be
+  safely verified without live API access. The current v2.9.4 source performs cache-first
+  v2 price lookup in batches and retains the v1 endpoint as a fallback.
 
 ## 2.8.9
 
